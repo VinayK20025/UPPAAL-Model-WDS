@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>
+const int DEPLETED = 0;
+const int LOW      = 1;
+const int NORMAL   = 2;
+const int HIGH     = 3;
+const int OVERFLOW = 4;
+
+/* Physical state */
+int tank_level   = NORMAL;
+int sensor_level = NORMAL;
+int secure_sensor_level = NORMAL;
+int plc_reading  = NORMAL;
+
+/* Actuation */
+bool pump_state   = false;
+bool pump_cmd_on  = false;
+bool pump_cmd_off = false;
+
+/* Security abstraction */
+bool intrusion_detected = false;
+bool data_valid         = true;
+
+/* Thresholds */
+const int LOWER_THRESHOLD = LOW;
+const int UPPER_THRESHOLD = HIGH;
+
+/* Channels */
+chan sensor_sample;
+chan net_deliver_sensor;
+chan plc_to_actuator;
+chan net_deliver_cmd;
+
+/* Timing */
+const int Ts_min = 1, Ts_max = 5;
+</declaration>
+	<template>
+		<name>Tank</name>
+		<location id="id0" x="40" y="80">
+			<name x="30" y="50">Normal</name>
+		</location>
+		<location id="id1" x="190" y="80">
+			<name x="180" y="50">Low</name>
+		</location>
+		<location id="id2" x="190" y="230">
+			<name x="180" y="200">High</name>
+		</location>
+		<location id="id3" x="40" y="230">
+			<name x="30" y="200">Overflow</name>
+		</location>
+		<location id="id4" x="340" y="80">
+			<name x="330" y="50">Depleted</name>
+		</location>
+		<init ref="id0"/>
+		<transition id="id5">
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="guard" x="55" y="50">!pump_state</label>
+			<label kind="assignment" x="55" y="80">tank_level = LOW</label>
+		</transition>
+		<transition id="id6">
+			<source ref="id1"/>
+			<target ref="id0"/>
+			<label kind="guard" x="55" y="50">pump_state</label>
+			<label kind="assignment" x="55" y="80">tank_level = NORMAL</label>
+		</transition>
+		<transition id="id7">
+			<source ref="id0"/>
+			<target ref="id2"/>
+			<label kind="guard" x="55" y="125">pump_state</label>
+			<label kind="assignment" x="55" y="155">tank_level = HIGH</label>
+		</transition>
+		<transition id="id8">
+			<source ref="id2"/>
+			<target ref="id3"/>
+			<label kind="guard" x="55" y="200">pump_state</label>
+			<label kind="assignment" x="55" y="230">tank_level = OVERFLOW</label>
+		</transition>
+	</template>
+	<template>
+		<name>Sensor</name>
+		<declaration>clock x_s;</declaration>
+		<location id="id9" x="40" y="80">
+			<label kind="invariant" x="30" y="95">x_s &lt;= Ts_max</label>
+		</location>
+		<init ref="id9"/>
+		<transition id="id10">
+			<source ref="id9"/>
+			<target ref="id9"/>
+			<label kind="guard" x="-20" y="50">x_s &gt;= Ts_min</label>
+			<label kind="synchronisation" x="-20" y="65">sensor_sample!</label>
+			<label kind="assignment" x="-20" y="80">sensor_level = tank_level,
+      x_s = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>Network</name>
+		<location id="id11" x="40" y="80">
+		</location>
+		<init ref="id11"/>
+		<transition id="id12">
+			<source ref="id11"/>
+			<target ref="id11"/>
+			<label kind="select" x="-20" y="35">v : int[DEPLETED, OVERFLOW]</label>
+			<label kind="synchronisation" x="-20" y="65">net_deliver_sensor!</label>
+			<label kind="assignment" x="-20" y="80">secure_sensor_level = v</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>IDS</name>
+		<location id="id13" x="40" y="80">
+		</location>
+		<init ref="id13"/>
+		<transition id="id14">
+			<source ref="id13"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="-20" y="65">net_deliver_sensor?</label>
+			<label kind="assignment" x="-20" y="80">intrusion_detected = (secure_sensor_level != tank_level),
+      data_valid = (secure_sensor_level == tank_level)</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>PLC</name>
+		<location id="id15" x="40" y="80">
+		</location>
+		<init ref="id15"/>
+		<transition id="id16">
+			<source ref="id15"/>
+			<target ref="id15"/>
+			<label kind="guard" x="-20" y="50">data_valid &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD</label>
+			<label kind="assignment" x="-20" y="80">pump_cmd_on = true,
+      pump_cmd_off = false</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id17">
+			<source ref="id15"/>
+			<target ref="id15"/>
+			<label kind="guard" x="-20" y="50">secure_sensor_level &gt;= UPPER_THRESHOLD</label>
+			<label kind="assignment" x="-20" y="80">pump_cmd_on = false,
+      pump_cmd_off = true</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>Pump</name>
+		<location id="id18" x="40" y="80">
+		</location>
+		<init ref="id18"/>
+		<transition id="id19">
+			<source ref="id18"/>
+			<target ref="id18"/>
+			<label kind="guard" x="-20" y="50">pump_cmd_on</label>
+			<label kind="assignment" x="-20" y="80">pump_state = true,
+      pump_cmd_on = false</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id20">
+			<source ref="id18"/>
+			<target ref="id18"/>
+			<label kind="guard" x="-20" y="50">pump_cmd_off</label>
+			<label kind="assignment" x="-20" y="80">pump_state = false,
+      pump_cmd_off = false</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<system>
+tank = Tank();
+sensor = Sensor();
+network = Network();
+ids = IDS();
+plc = PLC();
+pump = Pump();
+
+system tank, sensor, network, ids, plc, pump;
+</system>
+	<queries>
+		<query>
+			<formula>A[] not tank.Overflow</formula>
+			<comment>Safety: Tank never overflows</comment>
+			<result outcome="failure" type="quality" timestamp="2026-03-31 23:54:52 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>A[] not tank.Depleted</formula>
+			<comment>Safety: Tank never depletes</comment>
+			<result outcome="success" type="quality" timestamp="2026-03-31 23:54:54 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; tank.Normal</formula>
+			<comment>Liveness: System can reach Normal state</comment>
+			<result outcome="success" type="quality" timestamp="2026-03-31 23:54:55 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>A[] sensor_level == tank_level</formula>
+			<comment>Raw sensor integrity</comment>
+			<result outcome="failure" type="quality" timestamp="2026-03-31 23:54:56 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>A[] (not intrusion_detected imply secure_sensor_level == tank_level)</formula>
+			<comment>Secure data integrity under no alarm</comment>
+			<result outcome="failure" type="quality" timestamp="2026-03-31 23:54:58 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>A[] !(pump_cmd_on &amp;&amp; pump_cmd_off)</formula>
+			<comment>No conflicting actuator commands</comment>
+			<result outcome="success" type="quality" timestamp="2026-03-31 23:54:59 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; intrusion_detected</formula>
+			<comment>Intrusion detection is reachable</comment>
+			<result outcome="success" type="quality" timestamp="2026-03-31 23:55:01 +0530">
+			</result>
+		</query>
+	</queries>
+</nta>

@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN'
+'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+
+<nta>
+
+<!-- ================= GLOBAL ================= -->
+<declaration>
+const int DEPLETED = 0;
+const int LOW      = 1;
+const int NORMAL   = 2;
+const int HIGH     = 3;
+const int OVERFLOW = 4;
+
+/* State */
+int tank_level = NORMAL;
+int sensor_level = NORMAL;
+int secure_sensor_level = NORMAL;
+
+/* Control */
+bool pump_state   = false;
+bool pump_cmd_on  = false;
+bool pump_cmd_off = false;
+
+/* Security */
+bool intrusion_detected = false;
+bool safe_mode = false;
+bool alarm_integrity = false;
+bool alarm_dos = false;
+
+/* Attack flags */
+bool fdi_active = false;
+bool dos_active = false;
+
+/* Recovery */
+int clean_count = 0;
+const int RECOVERY_THRESHOLD = 3;
+
+/* Thresholds */
+const int LOWER_THRESHOLD = LOW;
+const int UPPER_THRESHOLD = HIGH;
+
+/* Channels */
+chan sensor_sample;
+chan net_deliver_sensor;
+chan safe_mode_on;
+chan safe_mode_off;
+chan dos_block;
+
+/* Timing */
+const int Ts_min = 1, Ts_max = 5;
+</declaration>
+
+<!-- ================= TANK ================= -->
+<template>
+  <name>Tank</name>
+
+  <location id="t0"><name>Normal</name></location>
+  <location id="t1"><name>Low</name></location>
+  <location id="t2"><name>High</name></location>
+  <location id="t3"><name>Overflow</name></location>
+
+  <init ref="t0"/>
+
+  <transition>
+    <source ref="t0"/><target ref="t1"/>
+    <label kind="guard">!pump_state</label>
+    <label kind="assignment">tank_level = LOW</label>
+  </transition>
+
+  <transition>
+    <source ref="t1"/><target ref="t0"/>
+    <label kind="guard">pump_state</label>
+    <label kind="assignment">tank_level = NORMAL</label>
+  </transition>
+
+  <transition>
+    <source ref="t0"/><target ref="t2"/>
+    <label kind="guard">pump_state</label>
+    <label kind="assignment">tank_level = HIGH</label>
+  </transition>
+
+  <transition>
+    <source ref="t2"/><target ref="t3"/>
+    <label kind="guard">pump_state</label>
+    <label kind="assignment">tank_level = OVERFLOW</label>
+  </transition>
+</template>
+
+<!-- ================= SENSOR ================= -->
+<template>
+  <name>Sensor</name>
+  <declaration>clock x;</declaration>
+
+  <location id="s0">
+    <label kind="invariant">x &lt;= Ts_max</label>
+  </location>
+
+  <init ref="s0"/>
+
+  <transition>
+    <source ref="s0"/><target ref="s0"/>
+    <label kind="guard">x &gt;= Ts_min</label>
+    <label kind="synchronisation">sensor_sample!</label>
+    <label kind="assignment">sensor_level = tank_level, x = 0</label>
+  </transition>
+</template>
+
+<!-- ================= NETWORK ================= -->
+<template>
+  <name>Network</name>
+
+  <location id="n0"/>
+  <location id="blocked"><name>Blocked</name></location>
+
+  <init ref="n0"/>
+
+  <transition>
+    <source ref="n0"/><target ref="n0"/>
+    <label kind="synchronisation">sensor_sample?</label>
+    <label kind="guard">!dos_active</label>
+    <label kind="synchronisation">net_deliver_sensor!</label>
+    <label kind="assignment">
+      secure_sensor_level = fdi_active ? LOW : sensor_level
+    </label>
+  </transition>
+
+  <transition>
+    <source ref="n0"/><target ref="blocked"/>
+    <label kind="synchronisation">dos_block?</label>
+    <label kind="assignment">dos_active = true</label>
+  </transition>
+</template>
+
+<!-- ================= IDS ================= -->
+<template>
+  <name>IDS</name>
+
+  <location id="i0"/>
+  <init ref="i0"/>
+
+  <transition>
+    <source ref="i0"/><target ref="i0"/>
+    <label kind="synchronisation">net_deliver_sensor?</label>
+    <label kind="assignment">
+      intrusion_detected = (secure_sensor_level != tank_level),
+      alarm_integrity = (secure_sensor_level != tank_level),
+      clean_count = (secure_sensor_level == tank_level ? clean_count + 1 : 0)
+    </label>
+  </transition>
+</template>
+
+<!-- ================= SAFE MODE ================= -->
+<template>
+  <name>SafeMode</name>
+
+  <location id="sm0"><name>NormalMode</name></location>
+  <location id="sm1"><name>SafeMode</name></location>
+
+  <init ref="sm0"/>
+
+  <!-- Enter safe mode -->
+  <transition>
+    <source ref="sm0"/><target ref="sm1"/>
+    <label kind="guard">alarm_integrity || dos_active</label>
+    <label kind="assignment">safe_mode = true</label>
+  </transition>
+
+  <!-- Exit safe mode -->
+  <transition>
+    <source ref="sm1"/><target ref="sm0"/>
+    <label kind="guard">clean_count &gt;= RECOVERY_THRESHOLD</label>
+    <label kind="assignment">
+      safe_mode = false,
+      alarm_integrity = false,
+      dos_active = false
+    </label>
+  </transition>
+</template>
+
+<!-- ================= PLC ================= -->
+<template>
+  <name>PLC</name>
+
+  <location id="p0"/>
+  <init ref="p0"/>
+
+  <transition>
+    <source ref="p0"/><target ref="p0"/>
+    <label kind="guard">
+      !safe_mode &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD
+    </label>
+    <label kind="assignment">
+      pump_cmd_on = true,
+      pump_cmd_off = false
+    </label>
+  </transition>
+
+  <transition>
+    <source ref="p0"/><target ref="p0"/>
+    <label kind="guard">
+      secure_sensor_level &gt;= UPPER_THRESHOLD
+    </label>
+    <label kind="assignment">
+      pump_cmd_on = false,
+      pump_cmd_off = true
+    </label>
+  </transition>
+</template>
+
+<!-- ================= PUMP ================= -->
+<template>
+  <name>Pump</name>
+
+  <location id="a0"/>
+  <init ref="a0"/>
+
+  <!-- Safe mode override -->
+  <transition>
+    <source ref="a0"/><target ref="a0"/>
+    <label kind="guard">safe_mode</label>
+    <label kind="assignment">
+      pump_state = false,
+      pump_cmd_on = false,
+      pump_cmd_off = false
+    </label>
+  </transition>
+
+  <transition>
+    <source ref="a0"/><target ref="a0"/>
+    <label kind="guard">pump_cmd_on</label>
+    <label kind="assignment">pump_state = true, pump_cmd_on = false</label>
+  </transition>
+
+  <transition>
+    <source ref="a0"/><target ref="a0"/>
+    <label kind="guard">pump_cmd_off</label>
+    <label kind="assignment">pump_state = false, pump_cmd_off = false</label>
+  </transition>
+</template>
+
+<!-- ================= ATTACK ================= -->
+<template>
+  <name>FDI_Attacker</name>
+  <location id="f0"/>
+  <init ref="f0"/>
+
+  <transition>
+    <source ref="f0"/><target ref="f0"/>
+    <label kind="assignment">fdi_active = true</label>
+  </transition>
+</template>
+
+<!-- ================= SYSTEM ================= -->
+<system>
+tank = Tank();
+sensor = Sensor();
+network = Network();
+ids = IDS();
+safe = SafeMode();
+plc = PLC();
+pump = Pump();
+att = FDI_Attacker();
+
+system tank, sensor, network, ids, safe, plc, pump, att;
+</system>
+
+<!-- ================= QUERIES ================= -->
+<queries>
+
+<query>
+<formula>A[] safe_mode imply tank_level != OVERFLOW</formula>
+<comment>Safety guaranteed in safe mode</comment>
+</query>
+
+<query>
+<formula>E&lt;&gt; safe_mode</formula>
+<comment>Safe mode is reachable</comment>
+</query>
+
+<query>
+<formula>E&lt;&gt; alarm_integrity</formula>
+<comment>Intrusion detection triggers</comment>
+</query>
+
+</queries>
+
+</nta>
