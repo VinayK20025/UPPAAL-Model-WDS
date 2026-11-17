@@ -1,0 +1,172 @@
+[
+  {
+    "path": ".gitignore",
+    "bytes": 105,
+    "sha256": "5613fc7e5d3bc0b0c7a9e483b5e5fa7bb4f17e70805a3a43c5816dd072725c3e"
+  },
+  {
+    "path": "CITATION.cff",
+    "bytes": 374,
+    "sha256": "f157e570625b027dbdf2885d131444147d8ee527ca099935eeca767b5618079b"
+  },
+  {
+    "path": "CONTRIBUTING.md",
+    "bytes": 568,
+    "sha256": "7c7e74296240481c82c64493f2d54cc89201caa681af11fa23dab69ddba60c6f"
+  },
+  {
+    "path": "README.md",
+    "bytes": 3506,
+    "sha256": "e4310d269ddef57692bebf1550223603b8985503d607980b5fc526dbf5874428"
+  },
+  {
+    "path": "docs/model-lineage.md",
+    "bytes": 2032,
+    "sha256": "ce99844e56e8006a691a1ade2ad3f7bd025be4e1b54aa29564dc5103ff1fcac3"
+  },
+  {
+    "path": "docs/query-and-property-guide.md",
+    "bytes": 1442,
+    "sha256": "a88488263f2e69db9d6426fa241134b5e4563651d444937f9a0e3ea5aff10527"
+  },
+  {
+    "path": "docs/reproducibility.md",
+    "bytes": 1553,
+    "sha256": "d41fadb76cf243e49194dc18d9a57f03868ea61746f86c0fdac1a8cb7c3182b4"
+  },
+  {
+    "path": "docs/source-model-audit.md",
+    "bytes": 2513,
+    "sha256": "a72382c9154165e016d6e1d5757bfb403054ccd7ba45b95a6b9d7f7b1d02073e"
+  },
+  {
+    "path": "experiments/configs/README.md",
+    "bytes": 304,
+    "sha256": "7e6b2822ddbf96b96e34ab3469f4a45f579213a690d9f1a45d57045d95cf0c45"
+  },
+  {
+    "path": "metamodel/metamodel.md",
+    "bytes": 1773,
+    "sha256": "d9a27d8b093a63ed698c1fe25cf0ed729eed53bc6098e0875c259bc01228a40c"
+  },
+  {
+    "path": "models/derived/README.md",
+    "bytes": 219,
+    "sha256": "33dceac91624fb23de8e83afd1005a68657b56ad0bdafadefa23fc1fab68e5c0"
+  },
+  {
+    "path": "models/reference/Advanced_CPS_WDS.xml",
+    "bytes": 36255,
+    "sha256": "fecded9cda1d0535af0d06b517cd1f5cdb8c4cfb858170e6a946ba522b909e65"
+  },
+  {
+    "path": "models/reference/Baseline_CPS_WDS.xml",
+    "bytes": 4030,
+    "sha256": "068c79a029ce6fc266f784f356c56094581e632f2ba5ee19aaba6390ab7aa41c"
+  },
+  {
+    "path": "models/reference/CPS_WDS_Industry5_AI_Human_Timed_Verification.xml",
+    "bytes": 9001,
+    "sha256": "f3c4574c8318a51ec47212dca9a5aceb84977c089e66dd66b33c615029a454cc"
+  },
+  {
+    "path": "models/reference/CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml",
+    "bytes": 35984,
+    "sha256": "2dfff0c1d62b7a2ddc45c15320166895388f258a5490def9e6f434e1db4ec361"
+  },
+  {
+    "path": "models/reference/CPS_WDS_Secuity_Framework.xml",
+    "bytes": 7085,
+    "sha256": "d1c3029ec7a265bf4aa312f3b69f7cee6962c7480febf9ab7286b786ff00298a"
+  },
+  {
+    "path": "models/reference/CPS_WDS_With_Attacks.xml",
+    "bytes": 9414,
+    "sha256": "c828e740c35fb53056d71a4abb24766005380346799faff7e454787a498aa13b"
+  },
+  {
+    "path": "models/reference/CPS_WDS_With_Defence.xml",
+    "bytes": 6992,
+    "sha256": "1b42e72fc2afaf7a5b92a51138cf8a02d488e463f0f942d7c812a7b17001612e"
+  },
+  {
+    "path": "queries/catalogue.md",
+    "bytes": 966,
+    "sha256": "50332889088e6fb7d11e2f455192b75b817def447716ebb60e365e8bdf8386ba"
+  },
+  {
+    "path": "queries/inherited/Advanced_CPS_WDS.q",
+    "bytes": 17,
+    "sha256": "a53c752ecabf84d28dc0ea1567c0589ffb632777a5ad7178f70be0d2d99e5334"
+  },
+  {
+    "path": "queries/inherited/Baseline_CPS_WDS.q",
+    "bytes": 69,
+    "sha256": "61b1e98da757f386c8c102dd81a8118909a596b99f4febe76503885a4ef85861"
+  },
+  {
+    "path": "queries/inherited/CPS_WDS_Industry5_AI_Human_Timed_Verification.q",
+    "bytes": 126,
+    "sha256": "8cb3ed6696aaa1ed13151ccaee552c0f8a1c7a4a177ca83a23f5911d432d51de"
+  },
+  {
+    "path": "queries/inherited/CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.q",
+    "bytes": 1294,
+    "sha256": "e2df58fd512034955943f32dbb88957967c0b710af2b0aa009ec48ceb02f0cbe"
+  },
+  {
+    "path": "queries/inherited/CPS_WDS_Secuity_Framework.q",
+    "bytes": 218,
+    "sha256": "a53cfa6a9bdae4a2556dd5a797796cb84e3bfdaf837dc208cd7d825de5f57825"
+  },
+  {
+    "path": "queries/inherited/CPS_WDS_With_Attacks.q",
+    "bytes": 129,
+    "sha256": "4974e39a2affdceb261c364ee4a831372d3cef9fff6d20928c68ee0115413e1f"
+  },
+  {
+    "path": "queries/inherited/CPS_WDS_With_Defence.q",
+    "bytes": 77,
+    "sha256": "4e1477ae75950e95d9e507fd77c18f1d65518e5e03cfe6844c5e1f6d24a00f2a"
+  },
+  {
+    "path": "results/inherited/README.md",
+    "bytes": 317,
+    "sha256": "3884d8951a03515cb36441e2732cab2529809112ab43eed034ccf04116aff57f"
+  },
+  {
+    "path": "results/inherited/query-inventory.json",
+    "bytes": 18157,
+    "sha256": "e6ca0cd75f2f0d9e52a3ad19b37f9b85c709d4bca1575605724fc23825975556"
+  },
+  {
+    "path": "results/reproduced/.gitkeep",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": "scripts/extract_inherited_results.py",
+    "bytes": 2036,
+    "sha256": "d148b099c70852f3efad33d6815c321f93aa7c2dc1d08267cf6a849faea9546c"
+  },
+  {
+    "path": "scripts/validate_models.py",
+    "bytes": 708,
+    "sha256": "85768b47505d321648e4b282c66a5af4a55d7435a0a3c80fe03e003e1ae2db1e"
+  },
+  {
+    "path": "semantics/assumption-semantics.md",
+    "bytes": 1350,
+    "sha256": "de795c0ea8457ab1b9bca12da3608672dc3b48c84141c11102925a3b21094233"
+  },
+  {
+    "path": "semantics/timed-automata-mapping.md",
+    "bytes": 1247,
+    "sha256": "a1c22321ae5447f9243c51b0f7578a0082c59bac3575ed2856696026c5193dd1"
+  },
+  {
+    "path": "tests/README.md",
+    "bytes": 349,
+    "sha256": "55da6b1ecd06fb156da6c96251ae29c6af8f3f88a2bfcf51e3cb7936f5afc827"
+  }
+]

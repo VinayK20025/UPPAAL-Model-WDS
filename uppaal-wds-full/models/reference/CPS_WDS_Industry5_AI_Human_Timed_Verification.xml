@@ -1,0 +1,383 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN'
+'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+
+<nta>
+
+<!-- ================= GLOBAL ================= -->
+<declaration>
+const int DEPLETED = 0;
+const int LOW      = 1;
+const int NORMAL   = 2;
+const int HIGH     = 3;
+const int OVERFLOW = 4;
+
+/* Physical + Digital Twin */
+int tank_level = NORMAL;
+int sensor_level = NORMAL;
+int secure_sensor_level = NORMAL;
+int twin_estimate = NORMAL;
+
+/* Control */
+bool pump_state   = false;
+bool pump_cmd_on  = false;
+bool pump_cmd_off = false;
+
+/* Security */
+bool intrusion_detected = false;
+bool ai_alarm = false;
+bool operator_ack = false;
+bool safe_mode = false;
+
+/* Attack flags */
+bool fdi_active = false;
+bool replay_active = false;
+bool dos_active = false;
+
+/* Replay buffer */
+int replay_buffer = NORMAL;
+
+/* Timing (Novelty) */
+clock t_detect;
+clock t_response;
+
+const int Td_max = 5;
+const int Tr_max = 3;
+
+/* Thresholds */
+const int LOWER_THRESHOLD = LOW;
+const int UPPER_THRESHOLD = HIGH;
+
+/* Channels */
+chan sensor_sample;
+chan net_deliver_sensor;
+chan fdi_trigger;
+chan replay_trigger;
+chan dos_block;
+chan dos_release;
+
+/* Timing */
+const int Ts_min = 1, Ts_max = 5;
+</declaration>
+
+<!-- ================= TANK ================= -->
+<template>
+<name>Tank</name>
+
+<location id="t0"><name>Normal</name></location>
+<location id="t1"><name>Low</name></location>
+<location id="t2"><name>High</name></location>
+<location id="t3"><name>Overflow</name></location>
+
+<init ref="t0"/>
+
+<transition>
+<source ref="t0"/><target ref="t1"/>
+<label kind="guard">!pump_state</label>
+<label kind="assignment">tank_level = LOW</label>
+</transition>
+
+<transition>
+<source ref="t1"/><target ref="t0"/>
+<label kind="guard">pump_state</label>
+<label kind="assignment">tank_level = NORMAL</label>
+</transition>
+
+<transition>
+<source ref="t0"/><target ref="t2"/>
+<label kind="guard">pump_state</label>
+<label kind="assignment">tank_level = HIGH</label>
+</transition>
+
+<transition>
+<source ref="t2"/><target ref="t3"/>
+<label kind="guard">pump_state</label>
+<label kind="assignment">tank_level = OVERFLOW</label>
+</transition>
+
+</template>
+
+<!-- ================= SENSOR ================= -->
+<template>
+<name>Sensor</name>
+<declaration>clock x;</declaration>
+
+<location id="s0">
+<label kind="invariant">x &lt;= Ts_max</label>
+</location>
+
+<init ref="s0"/>
+
+<transition>
+<source ref="s0"/><target ref="s0"/>
+<label kind="guard">x &gt;= Ts_min</label>
+<label kind="synchronisation">sensor_sample!</label>
+<label kind="assignment">
+sensor_level = tank_level,
+twin_estimate = tank_level,
+x = 0
+</label>
+</transition>
+
+</template>
+
+<!-- ================= NETWORK ================= -->
+<template>
+<name>Network</name>
+
+<location id="n0"/>
+<location id="n1"><name>Blocked</name></location>
+
+<init ref="n0"/>
+
+<!-- Normal -->
+<transition>
+<source ref="n0"/><target ref="n0"/>
+<label kind="guard">!dos_active &amp;&amp; !fdi_active &amp;&amp; !replay_active</label>
+<label kind="synchronisation">net_deliver_sensor!</label>
+<label kind="assignment">secure_sensor_level = sensor_level</label>
+</transition>
+
+<!-- FDI -->
+<transition>
+<source ref="n0"/><target ref="n0"/>
+<label kind="guard">fdi_active &amp;&amp; !dos_active</label>
+<label kind="synchronisation">net_deliver_sensor!</label>
+<label kind="assignment">secure_sensor_level = LOW</label>
+</transition>
+
+<!-- Replay -->
+<transition>
+<source ref="n0"/><target ref="n0"/>
+<label kind="guard">replay_active &amp;&amp; !dos_active</label>
+<label kind="synchronisation">net_deliver_sensor!</label>
+<label kind="assignment">secure_sensor_level = replay_buffer</label>
+</transition>
+
+<!-- DoS -->
+<transition>
+<source ref="n0"/><target ref="n1"/>
+<label kind="synchronisation">dos_block?</label>
+<label kind="assignment">dos_active = true</label>
+</transition>
+
+<transition>
+<source ref="n1"/><target ref="n0"/>
+<label kind="synchronisation">dos_release?</label>
+<label kind="assignment">dos_active = false</label>
+</transition>
+
+</template>
+
+<!-- ================= AI IDS ================= -->
+<template>
+<name>AI_IDS</name>
+
+<location id="i0"/>
+<init ref="i0"/>
+
+<transition>
+<source ref="i0"/><target ref="i0"/>
+<label kind="synchronisation">net_deliver_sensor?</label>
+<label kind="assignment">
+intrusion_detected = (secure_sensor_level != tank_level),
+ai_alarm = intrusion_detected,
+t_detect = 0
+</label>
+</transition>
+
+</template>
+
+<!-- ================= HUMAN OPERATOR ================= -->
+<template>
+<name>Operator</name>
+
+<location id="o0"><name>Idle</name></location>
+<location id="o1">
+<name>Responding</name>
+<label kind="invariant">t_response &lt;= Tr_max</label>
+</location>
+
+<init ref="o0"/>
+
+<!-- Start response -->
+<transition>
+<source ref="o0"/><target ref="o1"/>
+<label kind="guard">ai_alarm</label>
+<label kind="assignment">t_response = 0</label>
+</transition>
+
+<!-- Finish response -->
+<transition>
+<source ref="o1"/><target ref="o0"/>
+<label kind="guard">t_response &gt;= Tr_max</label>
+<label kind="assignment">
+operator_ack = true,
+ai_alarm = false
+</label>
+</transition>
+
+</template>
+
+<!-- ================= SAFE MODE ================= -->
+<template>
+<name>SafeMode</name>
+
+<location id="sm0"><name>Normal</name></location>
+<location id="sm1"><name>Safe</name></location>
+
+<init ref="sm0"/>
+
+<!-- Detection-based entry -->
+<transition>
+<source ref="sm0"/><target ref="sm1"/>
+<label kind="guard">intrusion_detected &amp;&amp; t_detect &lt;= Td_max</label>
+<label kind="assignment">safe_mode = true</label>
+</transition>
+
+<!-- Human-based entry -->
+<transition>
+<source ref="sm0"/><target ref="sm1"/>
+<label kind="guard">operator_ack</label>
+<label kind="assignment">safe_mode = true</label>
+</transition>
+
+</template>
+
+<!-- ================= PLC ================= -->
+<template>
+<name>PLC</name>
+
+<location id="p0"/>
+<init ref="p0"/>
+
+<transition>
+<source ref="p0"/><target ref="p0"/>
+<label kind="guard">!safe_mode &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD</label>
+<label kind="assignment">pump_cmd_on = true, pump_cmd_off = false</label>
+</transition>
+
+<transition>
+<source ref="p0"/><target ref="p0"/>
+<label kind="guard">secure_sensor_level &gt;= UPPER_THRESHOLD</label>
+<label kind="assignment">pump_cmd_on = false, pump_cmd_off = true</label>
+</transition>
+
+</template>
+
+<!-- ================= PUMP ================= -->
+<template>
+<name>Pump</name>
+
+<location id="a0"/>
+<init ref="a0"/>
+
+<!-- Safe mode override -->
+<transition>
+<source ref="a0"/><target ref="a0"/>
+<label kind="guard">safe_mode</label>
+<label kind="assignment">
+pump_state = false,
+pump_cmd_on = false,
+pump_cmd_off = false
+</label>
+</transition>
+
+<transition>
+<source ref="a0"/><target ref="a0"/>
+<label kind="guard">pump_cmd_on</label>
+<label kind="assignment">pump_state = true, pump_cmd_on = false</label>
+</transition>
+
+<transition>
+<source ref="a0"/><target ref="a0"/>
+<label kind="guard">pump_cmd_off</label>
+<label kind="assignment">pump_state = false, pump_cmd_off = false</label>
+</transition>
+
+</template>
+
+<!-- ================= ATTACKERS ================= -->
+<template>
+<name>FDI_Attacker</name>
+<location id="f0"/><init ref="f0"/>
+<transition>
+<source ref="f0"/><target ref="f0"/>
+<label kind="synchronisation">fdi_trigger!</label>
+<label kind="assignment">fdi_active = true</label>
+</transition>
+</template>
+
+<template>
+<name>Replay_Attacker</name>
+<location id="r0"/><init ref="r0"/>
+<transition>
+<source ref="r0"/><target ref="r0"/>
+<label kind="synchronisation">sensor_sample?</label>
+<label kind="assignment">replay_buffer = sensor_level</label>
+</transition>
+<transition>
+<source ref="r0"/><target ref="r0"/>
+<label kind="synchronisation">replay_trigger!</label>
+<label kind="assignment">replay_active = true</label>
+</transition>
+</template>
+
+<template>
+<name>DoS_Attacker</name>
+<location id="d0"/><init ref="d0"/>
+<transition>
+<source ref="d0"/><target ref="d0"/>
+<label kind="synchronisation">dos_block!</label>
+<label kind="assignment">dos_active = true</label>
+</transition>
+</template>
+
+<!-- ================= SYSTEM ================= -->
+<system>
+tank = Tank();
+sensor = Sensor();
+network = Network();
+ids = AI_IDS();
+operator = Operator();
+safe = SafeMode();
+plc = PLC();
+pump = Pump();
+fdi = FDI_Attacker();
+replay = Replay_Attacker();
+dos = DoS_Attacker();
+
+system tank, sensor, network, ids, operator, safe, plc, pump, fdi, replay, dos;
+</system>
+
+<!-- ================= QUERIES ================= -->
+<queries>
+
+<query>
+<formula>A[] safe_mode imply tank_level != OVERFLOW</formula>
+<comment>Conditional safety</comment>
+</query>
+
+<query>
+<formula>E&lt;&gt; tank.Overflow</formula>
+<comment>Overflow reachable under attack</comment>
+</query>
+
+<query>
+<formula>E&lt;&gt; ai_alarm</formula>
+<comment>AI detection triggers</comment>
+</query>
+
+<query>
+<formula>E&lt;&gt; operator_ack</formula>
+<comment>Human response</comment>
+</query>
+
+<query>
+<formula>A[] !(pump_cmd_on &amp;&amp; pump_cmd_off)</formula>
+<comment>Control safety</comment>
+</query>
+
+</queries>
+
+</nta>

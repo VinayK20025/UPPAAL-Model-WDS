@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>
+const int DEPLETED = 0;
+const int LOW      = 1;
+const int NORMAL   = 2;
+const int HIGH     = 3;
+const int OVERFLOW = 4;
+
+int tank_level = NORMAL;
+int sensor_level = NORMAL;
+int plc_reading  = NORMAL;
+
+bool pump_cmd_on  = false;
+bool pump_cmd_off = false;
+bool pump_state   = false;
+
+const int LOWER_THRESHOLD = LOW;
+const int UPPER_THRESHOLD = HIGH;
+
+chan sensor_sample;
+chan net_deliver_sensor;
+chan plc_to_actuator;
+chan net_deliver_cmd;
+
+const int Ts_min   = 1;   const int Ts_max   = 5;
+const int Tplc_min = 2;   const int Tplc_max = 8;
+const int Tact_min = 1;   const int Tact_max = 3;
+const int Tnet_min = 0;   const int Tnet_max = 10;
+</declaration>
+	<template>
+		<name>Tank</name>
+		<declaration>
+    clock x_tank;
+    const int T_HYD_MIN = 3;
+    const int T_HYD_MAX = 7;
+  </declaration>
+		<location id="id0" x="600" y="200">
+			<name x="590" y="170">Normal</name>
+			<label kind="invariant" x="552" y="212">x_tank &lt;= T_HYD_MAX</label>
+		</location>
+		<location id="id1" x="200" y="200">
+			<name x="190" y="170">Depleted</name>
+		</location>
+		<location id="id2" x="400" y="200">
+			<name x="390" y="170">Low</name>
+		</location>
+		<location id="id3" x="800" y="200">
+			<name x="790" y="170">High</name>
+		</location>
+		<location id="id4" x="1000" y="200">
+			<name x="990" y="170">Overflow</name>
+		</location>
+		<init ref="id0"/>
+	</template>
+	<template>
+		<name>Sensor</name>
+		<declaration>
+    clock x_s;
+  </declaration>
+		<location id="id5" x="40" y="80">
+			<label kind="invariant" x="30" y="95">x_s &lt;= Ts_max</label>
+		</location>
+		<init ref="id5"/>
+		<transition id="id6">
+			<source ref="id5"/>
+			<target ref="id5"/>
+			<label kind="guard" x="-20" y="50">x_s &gt;= Ts_min</label>
+			<label kind="assignment" x="-20" y="80">sensor_level = tank_level, x_s = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>PLC</name>
+		<location id="id7" x="40" y="80">
+		</location>
+		<init ref="id7"/>
+		<transition id="id8">
+			<source ref="id7"/>
+			<target ref="id7"/>
+			<label kind="guard" x="-20" y="50">sensor_level &lt;= LOWER_THRESHOLD</label>
+			<label kind="assignment" x="-20" y="80">pump_cmd_on = true</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id9">
+			<source ref="id7"/>
+			<target ref="id7"/>
+			<label kind="guard" x="-20" y="50">sensor_level &gt;= UPPER_THRESHOLD</label>
+			<label kind="assignment" x="-20" y="80">pump_cmd_off = true</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>Pump</name>
+		<location id="id10" x="40" y="80">
+		</location>
+		<init ref="id10"/>
+		<transition id="id11">
+			<source ref="id10"/>
+			<target ref="id10"/>
+			<label kind="guard" x="-20" y="50">pump_cmd_on</label>
+			<label kind="assignment" x="-20" y="80">pump_state = true, pump_cmd_on = false</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id12">
+			<source ref="id10"/>
+			<target ref="id10"/>
+			<label kind="guard" x="-20" y="50">pump_cmd_off</label>
+			<label kind="assignment" x="-20" y="80">pump_state = false, pump_cmd_off = false</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<system>
+tank = Tank();
+sensor = Sensor();
+plc = PLC();
+pump = Pump();
+
+system tank, sensor, plc, pump;
+</system>
+	<queries>
+		<query>
+			<formula>A[] sensor_level == tank_level</formula>
+			<comment>Sensor integrity</comment>
+			<result outcome="success" type="quality" timestamp="2026-03-31 18:37:26 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>A[] not (pump_cmd_on &amp;&amp; pump_cmd_off)</formula>
+			<comment>Example safety property</comment>
+			<result outcome="success" type="quality" timestamp="2026-03-31 18:46:35 +0530">
+			</result>
+		</query>
+	</queries>
+</nta>

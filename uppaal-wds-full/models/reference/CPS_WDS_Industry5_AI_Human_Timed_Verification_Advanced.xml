@@ -1,0 +1,872 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>
+/* ---------- (A) System configuration ---------- */
+const int N = 2;                 // number of tanks (paper: N = 2)
+
+const int EMPTY    = 0;
+const int LOW      = 1;
+const int NORMAL    = 2;
+const int HIGH     = 3;
+const int OVERFLOW = 4;
+
+const int LOWER_THRESHOLD = LOW;
+const int UPPER_THRESHOLD = HIGH;
+
+const int FLOW_NOMINAL = 1;      // nominal flow unit when pump is ON
+
+/* ---------- (B) Physical / sensing / control state ---------- */
+int  tank_level[2]            = {NORMAL, NORMAL};
+bool pump_state[2]            = {false, false};
+int  sensor_level[2]          = {NORMAL, NORMAL};
+int  secure_sensor_level[2]   = {NORMAL, NORMAL};
+int  replay_buffer[2]         = {NORMAL, NORMAL};
+bool pump_cmd_on[2]           = {false, false};
+bool pump_cmd_off[2]          = {false, false};
+int  flow_level[2]            = {0, 0};
+
+/* ---------- (C) Digital Twin state ---------- */
+int  twin_estimate[2]         = {NORMAL, NORMAL};
+bool twin_error[2]            = {false, false};
+int  twin_sync_count[2]       = {0, 0};
+int  twin_mismatch_count[2]   = {0, 0};   // persistence counter (private to twin logic)
+
+/* ---------- (D) Security state ---------- */
+bool intrusion_detected = false;
+bool ai_alarm           = false;
+bool operator_ack       = false;
+bool safe_mode          = false;
+bool backup_shutdown    = false;
+
+/* ---------- (E) Adversary / attack state ---------- */
+bool fdi_active     = false;
+bool replay_active  = false;
+bool dos_active     = false;
+bool cmdinj_active  = false;     // command-injection attack flag
+int  target_id      = 0;         // tank currently targeted by the adversary
+int  attack_intensity = 0;       // 1..5, severity level (Table "Parameters")
+
+/* ---------- (F) Resilience / recovery / liveness state ---------- */
+int  clean_count    = 0;
+int  watchdog_miss  = 0;
+
+/* ---------- (G) Timing parameters ---------- */
+const int T_PHYS_MIN = 2,  T_PHYS_MAX = 4;     // physical-layer evolution period
+const int Ts_min      = 1,  Ts_max      = 3;    // sensor sampling period
+const int Tf_min      = 1,  Tf_max      = 3;    // flow-sensor sampling period
+const int Tn_min      = 1,  Tn_max      = 3;    // communication-layer period
+const int Tw_min      = 0,  Tw_max      = 4;    // digital-twin evaluation period
+const int Td_max      = 8;                      // detection budget (T_detect bound)
+const int Tr_min      = 1,  Tr_max      = 5;    // operator response window
+const int T_attack_min     = 2;                 // min wait before adversary activates
+const int T_attack_dur_min = 2, T_attack_dur_max = 6; // attack sustain duration
+const int T_recovery_min   = 2, T_recovery_max   = 6; // recovery stabilisation period
+const int WD_min = 1, WD_max = 4;               // watchdog heartbeat bounds
+const int WD_LIMIT   = 3;                       // missed-heartbeat tolerance
+const int THETA_TWIN  = 2;                      // mismatch persistence threshold
+const int THETA_CLEAN = 3;                      // clean observations to exit safe mode
+
+/* Clocks shared across automata (named exactly as in the manuscript) */
+clock t_detect;
+clock t_response;
+clock heartbeat;
+
+/* ---------- (H) Channels ---------- */
+broadcast chan sensor_sample[2];
+broadcast chan flow_sample[2];
+broadcast chan net_deliver[2];
+broadcast chan start[2];
+broadcast chan stop[2];
+broadcast chan alarm;
+broadcast chan attack_start;
+broadcast chan attack_end;
+broadcast chan backup_trig;
+broadcast chan safe_trig;
+
+/* ---------- (I) Helper functions ----------
+   Centralising the detection predicate and the safety-condition check keeps
+   guards on edges short, auditable, and consistent with the abstract
+   IDS contract described in Section "Limitations of the Abstract AI
+   Representation": Observed State -&gt; Detection Predicate -&gt; Alarm Signal.
+*/
+
+// Digital-twin prediction step (per-tank state-estimation update).
+void predict_twin(int id) {
+    if (pump_state[id]) {
+        if (twin_estimate[id] &lt; OVERFLOW) {
+            twin_estimate[id] = twin_estimate[id] + 1;
+        }
+    } else {
+        if (twin_estimate[id] &gt; EMPTY) {
+            twin_estimate[id] = twin_estimate[id] - 1;
+        }
+    }
+}
+
+// Digital-twin residual / consistency-check step with temporal filtering
+// (sustained-deviation counter), matching Section "AI-Based Detection and
+// Defence Mechanisms": "Temporal filtering mechanisms ... reduce false
+// positives by requiring sustained deviations before raising alarms."
+void update_twin(int id) {
+    if (twin_estimate[id] == secure_sensor_level[id]) {
+        twin_mismatch_count[id] = 0;
+        twin_error[id] = false;
+        if (twin_sync_count[id] &lt; 100) {
+            twin_sync_count[id] = twin_sync_count[id] + 1;
+        }
+    } else {
+        twin_mismatch_count[id] = twin_mismatch_count[id] + 1;
+        twin_sync_count[id] = 0;
+        if (twin_mismatch_count[id] &gt;= THETA_TWIN) {
+            twin_error[id] = true;
+        }
+    }
+}
+
+// Abstract IDS detection predicate: combines digital-twin residuals,
+// communication-layer evidence, and attack-flag variables, without
+// reference to any specific ML/statistical algorithm (Section 5.9 / Limitations 8.8).
+bool detect_predicate() {
+    return twin_error[0] || twin_error[1] || fdi_active || replay_active || dos_active || cmdinj_active;
+}
+
+// True if any tank has reached the OVERFLOW state.
+bool any_overflow() {
+    return (tank_level[0] == OVERFLOW) || (tank_level[1] == OVERFLOW);
+}
+</declaration>
+	<template>
+		<name>PhysicalProcess</name>
+		<parameter>const int id</parameter>
+		<declaration>clock c;</declaration>
+		<location id="id0" x="40" y="80">
+			<name x="30" y="50">Empty</name>
+			<label kind="invariant" x="30" y="95">c &lt;= T_PHYS_MAX</label>
+		</location>
+		<location id="id1" x="190" y="80">
+			<name x="180" y="50">Low</name>
+			<label kind="invariant" x="180" y="95">c &lt;= T_PHYS_MAX</label>
+		</location>
+		<location id="id2" x="190" y="230">
+			<name x="180" y="200">Normal</name>
+			<label kind="invariant" x="180" y="245">c &lt;= T_PHYS_MAX</label>
+		</location>
+		<location id="id3" x="40" y="230">
+			<name x="30" y="200">High</name>
+			<label kind="invariant" x="30" y="245">c &lt;= T_PHYS_MAX</label>
+		</location>
+		<location id="id4" x="340" y="80">
+			<name x="330" y="50">Overflow</name>
+			<label kind="invariant" x="330" y="95">c &lt;= T_PHYS_MAX</label>
+		</location>
+		<init ref="id2"/>
+		<transition id="id5">
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="guard" x="55" y="50">pump_state[id] &amp;&amp; c &gt;= T_PHYS_MIN</label>
+			<label kind="assignment" x="55" y="80">tank_level[id] = LOW, c = 0</label>
+		</transition>
+		<transition id="id6">
+			<source ref="id0"/>
+			<target ref="id0"/>
+			<label kind="guard" x="-20" y="50">!pump_state[id] &amp;&amp; c &gt;= T_PHYS_MIN</label>
+			<label kind="assignment" x="-20" y="80">tank_level[id] = EMPTY, c = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id7">
+			<source ref="id1"/>
+			<target ref="id2"/>
+			<label kind="guard" x="130" y="125">pump_state[id] &amp;&amp; c &gt;= T_PHYS_MIN</label>
+			<label kind="assignment" x="130" y="155">tank_level[id] = NORMAL, c = 0</label>
+		</transition>
+		<transition id="id8">
+			<source ref="id1"/>
+			<target ref="id0"/>
+			<label kind="guard" x="55" y="50">!pump_state[id] &amp;&amp; c &gt;= T_PHYS_MIN</label>
+			<label kind="assignment" x="55" y="80">tank_level[id] = EMPTY, c = 0</label>
+		</transition>
+		<transition id="id9">
+			<source ref="id2"/>
+			<target ref="id3"/>
+			<label kind="guard" x="55" y="200">pump_state[id] &amp;&amp; c &gt;= T_PHYS_MIN</label>
+			<label kind="assignment" x="55" y="230">tank_level[id] = HIGH, c = 0</label>
+		</transition>
+		<transition id="id10">
+			<source ref="id2"/>
+			<target ref="id1"/>
+			<label kind="guard" x="130" y="125">!pump_state[id] &amp;&amp; c &gt;= T_PHYS_MIN</label>
+			<label kind="assignment" x="130" y="155">tank_level[id] = LOW, c = 0</label>
+		</transition>
+		<transition id="id11">
+			<source ref="id3"/>
+			<target ref="id4"/>
+			<label kind="guard" x="130" y="125">pump_state[id] &amp;&amp; c &gt;= T_PHYS_MIN</label>
+			<label kind="assignment" x="130" y="155">tank_level[id] = OVERFLOW, c = 0</label>
+		</transition>
+		<transition id="id12">
+			<source ref="id3"/>
+			<target ref="id2"/>
+			<label kind="guard" x="55" y="200">!pump_state[id] &amp;&amp; c &gt;= T_PHYS_MIN</label>
+			<label kind="assignment" x="55" y="230">tank_level[id] = NORMAL, c = 0</label>
+		</transition>
+		<transition id="id13">
+			<source ref="id4"/>
+			<target ref="id4"/>
+			<label kind="guard" x="280" y="50">pump_state[id] &amp;&amp; c &gt;= T_PHYS_MIN</label>
+			<label kind="assignment" x="280" y="80">tank_level[id] = OVERFLOW, c = 0</label>
+			<nail x="310" y="50"/>
+			<nail x="370" y="50"/>
+		</transition>
+		<transition id="id14">
+			<source ref="id4"/>
+			<target ref="id3"/>
+			<label kind="guard" x="130" y="125">!pump_state[id] &amp;&amp; c &gt;= T_PHYS_MIN</label>
+			<label kind="assignment" x="130" y="155">tank_level[id] = HIGH, c = 0</label>
+		</transition>
+		<transition id="id15">
+			<source ref="id0"/>
+			<target ref="id0"/>
+			<label kind="synchronisation" x="-20" y="65">start[id]?</label>
+			<label kind="assignment" x="-20" y="80">pump_state[id] = true, pump_cmd_on[id] = false</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id16">
+			<source ref="id0"/>
+			<target ref="id0"/>
+			<label kind="synchronisation" x="-20" y="65">stop[id]?</label>
+			<label kind="assignment" x="-20" y="80">pump_state[id] = false, pump_cmd_off[id] = false</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id17">
+			<source ref="id1"/>
+			<target ref="id1"/>
+			<label kind="synchronisation" x="130" y="65">start[id]?</label>
+			<label kind="assignment" x="130" y="80">pump_state[id] = true, pump_cmd_on[id] = false</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id18">
+			<source ref="id1"/>
+			<target ref="id1"/>
+			<label kind="synchronisation" x="130" y="65">stop[id]?</label>
+			<label kind="assignment" x="130" y="80">pump_state[id] = false, pump_cmd_off[id] = false</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id19">
+			<source ref="id2"/>
+			<target ref="id2"/>
+			<label kind="synchronisation" x="130" y="215">start[id]?</label>
+			<label kind="assignment" x="130" y="230">pump_state[id] = true, pump_cmd_on[id] = false</label>
+			<nail x="160" y="200"/>
+			<nail x="220" y="200"/>
+		</transition>
+		<transition id="id20">
+			<source ref="id2"/>
+			<target ref="id2"/>
+			<label kind="synchronisation" x="130" y="215">stop[id]?</label>
+			<label kind="assignment" x="130" y="230">pump_state[id] = false, pump_cmd_off[id] = false</label>
+			<nail x="160" y="200"/>
+			<nail x="220" y="200"/>
+		</transition>
+		<transition id="id21">
+			<source ref="id3"/>
+			<target ref="id3"/>
+			<label kind="synchronisation" x="-20" y="215">start[id]?</label>
+			<label kind="assignment" x="-20" y="230">pump_state[id] = true, pump_cmd_on[id] = false</label>
+			<nail x="10" y="200"/>
+			<nail x="70" y="200"/>
+		</transition>
+		<transition id="id22">
+			<source ref="id3"/>
+			<target ref="id3"/>
+			<label kind="synchronisation" x="-20" y="215">stop[id]?</label>
+			<label kind="assignment" x="-20" y="230">pump_state[id] = false, pump_cmd_off[id] = false</label>
+			<nail x="10" y="200"/>
+			<nail x="70" y="200"/>
+		</transition>
+		<transition id="id23">
+			<source ref="id4"/>
+			<target ref="id4"/>
+			<label kind="synchronisation" x="280" y="65">start[id]?</label>
+			<label kind="assignment" x="280" y="80">pump_state[id] = true, pump_cmd_on[id] = false</label>
+			<nail x="310" y="50"/>
+			<nail x="370" y="50"/>
+		</transition>
+		<transition id="id24">
+			<source ref="id4"/>
+			<target ref="id4"/>
+			<label kind="synchronisation" x="280" y="65">stop[id]?</label>
+			<label kind="assignment" x="280" y="80">pump_state[id] = false, pump_cmd_off[id] = false</label>
+			<nail x="310" y="50"/>
+			<nail x="370" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>Sensor</name>
+		<parameter>const int id</parameter>
+		<declaration>clock x;</declaration>
+		<location id="id25" x="40" y="80">
+			<label kind="invariant" x="30" y="95">x &lt;= Ts_max</label>
+		</location>
+		<init ref="id25"/>
+		<transition id="id26">
+			<source ref="id25"/>
+			<target ref="id25"/>
+			<label kind="guard" x="-20" y="50">x &gt;= Ts_min</label>
+			<label kind="synchronisation" x="-20" y="65">sensor_sample[id]!</label>
+			<label kind="assignment" x="-20" y="80">replay_buffer[id] = sensor_level[id], sensor_level[id] = tank_level[id], x = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>FlowSensor</name>
+		<parameter>const int id</parameter>
+		<declaration>clock y;</declaration>
+		<location id="id27" x="40" y="80">
+			<label kind="invariant" x="30" y="95">y &lt;= Tf_max</label>
+		</location>
+		<init ref="id27"/>
+		<transition id="id28">
+			<source ref="id27"/>
+			<target ref="id27"/>
+			<label kind="guard" x="-20" y="50">y &gt;= Tf_min</label>
+			<label kind="synchronisation" x="-20" y="65">flow_sample[id]!</label>
+			<label kind="assignment" x="-20" y="80">flow_level[id] = (pump_state[id] ? FLOW_NOMINAL : 0), y = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>CommunicationNetwork</name>
+		<parameter>const int id</parameter>
+		<declaration>clock z;</declaration>
+		<location id="id29" x="40" y="80">
+			<label kind="invariant" x="30" y="95">z &lt;= Tn_max</label>
+		</location>
+		<init ref="id29"/>
+		<transition id="id30">
+			<source ref="id29"/>
+			<target ref="id29"/>
+			<label kind="guard" x="-20" y="50">z &gt;= Tn_min</label>
+			<label kind="synchronisation" x="-20" y="65">net_deliver[id]!</label>
+			<label kind="assignment" x="-20" y="80">secure_sensor_level[id] =
+  (dos_active &amp;&amp; target_id == id)    ? secure_sensor_level[id] :
+  (fdi_active &amp;&amp; target_id == id)    ? LOW :
+  (replay_active &amp;&amp; target_id == id) ? replay_buffer[id] :
+  sensor_level[id],
+z = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>DigitalTwin</name>
+		<parameter>const int id</parameter>
+		<declaration>clock w;</declaration>
+		<location id="id31" x="40" y="80">
+			<label kind="invariant" x="30" y="95">w &lt;= Tw_max</label>
+		</location>
+		<init ref="id31"/>
+		<transition id="id32">
+			<source ref="id31"/>
+			<target ref="id31"/>
+			<label kind="guard" x="-20" y="50">w &gt;= Tw_min</label>
+			<label kind="synchronisation" x="-20" y="65">net_deliver[id]?</label>
+			<label kind="assignment" x="-20" y="80">predict_twin(id), update_twin(id), w = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id33">
+			<source ref="id31"/>
+			<target ref="id31"/>
+			<label kind="guard" x="-20" y="50">w &gt;= Tw_max</label>
+			<label kind="assignment" x="-20" y="80">predict_twin(id), update_twin(id), w = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>PLC</name>
+		<location id="id34" x="40" y="80">
+		</location>
+		<init ref="id34"/>
+		<transition id="id35">
+			<source ref="id34"/>
+			<target ref="id34"/>
+			<label kind="select" x="-20" y="35">id : int[0,1]</label>
+			<label kind="guard" x="-20" y="50">!safe_mode &amp;&amp; !backup_shutdown &amp;&amp; !(cmdinj_active &amp;&amp; target_id == id) &amp;&amp; secure_sensor_level[id] &lt;= LOWER_THRESHOLD</label>
+			<label kind="synchronisation" x="-20" y="65">start[id]!</label>
+			<label kind="assignment" x="-20" y="80">pump_cmd_on[id] = true, pump_cmd_off[id] = false</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id36">
+			<source ref="id34"/>
+			<target ref="id34"/>
+			<label kind="select" x="-20" y="35">id : int[0,1]</label>
+			<label kind="guard" x="-20" y="50">!safe_mode &amp;&amp; !backup_shutdown &amp;&amp; !(cmdinj_active &amp;&amp; target_id == id) &amp;&amp; secure_sensor_level[id] &gt;= UPPER_THRESHOLD</label>
+			<label kind="synchronisation" x="-20" y="65">stop[id]!</label>
+			<label kind="assignment" x="-20" y="80">pump_cmd_on[id] = false, pump_cmd_off[id] = true</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id37">
+			<source ref="id34"/>
+			<target ref="id34"/>
+			<label kind="select" x="-20" y="35">id : int[0,1]</label>
+			<label kind="guard" x="-20" y="50">cmdinj_active &amp;&amp; target_id == id</label>
+			<label kind="synchronisation" x="-20" y="65">start[id]!</label>
+			<label kind="assignment" x="-20" y="80">pump_cmd_on[id] = true, pump_cmd_off[id] = false</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id38">
+			<source ref="id34"/>
+			<target ref="id34"/>
+			<label kind="select" x="-20" y="35">id : int[0,1]</label>
+			<label kind="guard" x="-20" y="50">safe_mode || backup_shutdown</label>
+			<label kind="synchronisation" x="-20" y="65">stop[id]!</label>
+			<label kind="assignment" x="-20" y="80">pump_cmd_on[id] = false, pump_cmd_off[id] = true</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>AI_IDS</name>
+		<location id="id39" x="40" y="80">
+			<name x="30" y="50">Idle</name>
+		</location>
+		<location id="id40" x="190" y="80">
+			<name x="180" y="50">Monitoring</name>
+		</location>
+		<location id="id41" x="190" y="230">
+			<name x="180" y="200">Alarm</name>
+		</location>
+		<init ref="id39"/>
+		<transition id="id42">
+			<source ref="id39"/>
+			<target ref="id40"/>
+			<label kind="select" x="55" y="35">sid : int[0,1]</label>
+			<label kind="synchronisation" x="55" y="65">net_deliver[sid]?</label>
+		</transition>
+		<transition id="id43">
+			<source ref="id40"/>
+			<target ref="id41"/>
+			<label kind="guard" x="130" y="125">detect_predicate()</label>
+			<label kind="synchronisation" x="130" y="140">alarm!</label>
+			<label kind="assignment" x="130" y="155">intrusion_detected = true, ai_alarm = true, t_detect = 0</label>
+		</transition>
+		<transition id="id44">
+			<source ref="id40"/>
+			<target ref="id39"/>
+			<label kind="guard" x="55" y="50">!detect_predicate()</label>
+		</transition>
+		<transition id="id45">
+			<source ref="id41"/>
+			<target ref="id39"/>
+			<label kind="guard" x="55" y="125">operator_ack</label>
+			<label kind="assignment" x="55" y="155">ai_alarm = false, intrusion_detected = false</label>
+		</transition>
+	</template>
+	<template>
+		<name>Operator</name>
+		<location id="id46" x="40" y="80">
+			<name x="30" y="50">Idle</name>
+		</location>
+		<location id="id47" x="190" y="80">
+			<name x="180" y="50">Alerted</name>
+			<label kind="invariant" x="180" y="95">t_response &lt;= Tr_max</label>
+		</location>
+		<location id="id48" x="190" y="230">
+			<name x="180" y="200">Acknowledging</name>
+		</location>
+		<location id="id49" x="40" y="230">
+			<name x="30" y="200">Responding</name>
+		</location>
+		<init ref="id46"/>
+		<transition id="id50">
+			<source ref="id46"/>
+			<target ref="id47"/>
+			<label kind="synchronisation" x="55" y="65">alarm?</label>
+			<label kind="assignment" x="55" y="80">t_response = 0</label>
+		</transition>
+		<transition id="id51">
+			<source ref="id47"/>
+			<target ref="id48"/>
+			<label kind="guard" x="130" y="125">t_response &gt;= Tr_min</label>
+			<label kind="assignment" x="130" y="155">operator_ack = true</label>
+		</transition>
+		<transition id="id52">
+			<source ref="id48"/>
+			<target ref="id49"/>
+		</transition>
+		<transition id="id53">
+			<source ref="id49"/>
+			<target ref="id46"/>
+			<label kind="guard" x="-20" y="125">any_overflow()</label>
+			<label kind="synchronisation" x="-20" y="140">backup_trig!</label>
+			<label kind="assignment" x="-20" y="155">backup_shutdown = true</label>
+		</transition>
+		<transition id="id54">
+			<source ref="id49"/>
+			<target ref="id46"/>
+			<label kind="guard" x="-20" y="125">!any_overflow()</label>
+			<label kind="synchronisation" x="-20" y="140">safe_trig!</label>
+			<label kind="assignment" x="-20" y="155">safe_mode = true</label>
+		</transition>
+	</template>
+	<template>
+		<name>Adversary</name>
+		<declaration>clock t_a;</declaration>
+		<location id="id55" x="40" y="80">
+			<name x="30" y="50">Wait</name>
+		</location>
+		<location id="id56" x="190" y="80">
+			<name x="180" y="50">FDI</name>
+			<label kind="invariant" x="180" y="95">t_a &lt;= T_attack_dur_max</label>
+		</location>
+		<location id="id57" x="190" y="230">
+			<name x="180" y="200">Replay</name>
+			<label kind="invariant" x="180" y="245">t_a &lt;= T_attack_dur_max</label>
+		</location>
+		<location id="id58" x="40" y="230">
+			<name x="30" y="200">DoS</name>
+			<label kind="invariant" x="30" y="245">t_a &lt;= T_attack_dur_max</label>
+		</location>
+		<location id="id59" x="340" y="80">
+			<name x="330" y="50">CommandInject</name>
+			<label kind="invariant" x="330" y="95">t_a &lt;= T_attack_dur_max</label>
+		</location>
+		<location id="id60" x="340" y="230">
+			<name x="330" y="200">Hybrid</name>
+			<label kind="invariant" x="330" y="245">t_a &lt;= T_attack_dur_max</label>
+		</location>
+		<init ref="id55"/>
+		<transition id="id61">
+			<source ref="id55"/>
+			<target ref="id56"/>
+			<label kind="select" x="55" y="35">tid : int[0,1], lvl : int[1,5]</label>
+			<label kind="guard" x="55" y="50">t_a &gt;= T_attack_min</label>
+			<label kind="synchronisation" x="55" y="65">attack_start!</label>
+			<label kind="assignment" x="55" y="80">fdi_active = true, target_id = tid, attack_intensity = lvl, t_a = 0</label>
+		</transition>
+		<transition id="id62">
+			<source ref="id55"/>
+			<target ref="id57"/>
+			<label kind="select" x="55" y="110">tid : int[0,1], lvl : int[1,5]</label>
+			<label kind="guard" x="55" y="125">t_a &gt;= T_attack_min</label>
+			<label kind="synchronisation" x="55" y="140">attack_start!</label>
+			<label kind="assignment" x="55" y="155">replay_active = true, target_id = tid, attack_intensity = lvl, t_a = 0</label>
+		</transition>
+		<transition id="id63">
+			<source ref="id55"/>
+			<target ref="id58"/>
+			<label kind="select" x="-20" y="110">tid : int[0,1], lvl : int[1,5]</label>
+			<label kind="guard" x="-20" y="125">t_a &gt;= T_attack_min</label>
+			<label kind="synchronisation" x="-20" y="140">attack_start!</label>
+			<label kind="assignment" x="-20" y="155">dos_active = true, target_id = tid, attack_intensity = lvl, t_a = 0</label>
+		</transition>
+		<transition id="id64">
+			<source ref="id55"/>
+			<target ref="id59"/>
+			<label kind="select" x="130" y="35">tid : int[0,1], lvl : int[1,5]</label>
+			<label kind="guard" x="130" y="50">t_a &gt;= T_attack_min</label>
+			<label kind="synchronisation" x="130" y="65">attack_start!</label>
+			<label kind="assignment" x="130" y="80">cmdinj_active = true, target_id = tid, attack_intensity = lvl, t_a = 0</label>
+		</transition>
+		<transition id="id65">
+			<source ref="id55"/>
+			<target ref="id60"/>
+			<label kind="select" x="130" y="110">tid : int[0,1], lvl : int[1,5]</label>
+			<label kind="guard" x="130" y="125">t_a &gt;= T_attack_min</label>
+			<label kind="synchronisation" x="130" y="140">attack_start!</label>
+			<label kind="assignment" x="130" y="155">fdi_active = true, dos_active = true, target_id = tid, attack_intensity = lvl, t_a = 0</label>
+		</transition>
+		<transition id="id66">
+			<source ref="id56"/>
+			<target ref="id55"/>
+			<label kind="guard" x="55" y="50">t_a &gt;= T_attack_dur_min</label>
+			<label kind="synchronisation" x="55" y="65">attack_end!</label>
+			<label kind="assignment" x="55" y="80">fdi_active = false, t_a = 0</label>
+		</transition>
+		<transition id="id67">
+			<source ref="id57"/>
+			<target ref="id55"/>
+			<label kind="guard" x="55" y="125">t_a &gt;= T_attack_dur_min</label>
+			<label kind="synchronisation" x="55" y="140">attack_end!</label>
+			<label kind="assignment" x="55" y="155">replay_active = false, t_a = 0</label>
+		</transition>
+		<transition id="id68">
+			<source ref="id58"/>
+			<target ref="id55"/>
+			<label kind="guard" x="-20" y="125">t_a &gt;= T_attack_dur_min</label>
+			<label kind="synchronisation" x="-20" y="140">attack_end!</label>
+			<label kind="assignment" x="-20" y="155">dos_active = false, t_a = 0</label>
+		</transition>
+		<transition id="id69">
+			<source ref="id59"/>
+			<target ref="id55"/>
+			<label kind="guard" x="130" y="50">t_a &gt;= T_attack_dur_min</label>
+			<label kind="synchronisation" x="130" y="65">attack_end!</label>
+			<label kind="assignment" x="130" y="80">cmdinj_active = false, t_a = 0</label>
+		</transition>
+		<transition id="id70">
+			<source ref="id60"/>
+			<target ref="id55"/>
+			<label kind="guard" x="130" y="125">t_a &gt;= T_attack_dur_min</label>
+			<label kind="synchronisation" x="130" y="140">attack_end!</label>
+			<label kind="assignment" x="130" y="155">fdi_active = false, dos_active = false, t_a = 0</label>
+		</transition>
+	</template>
+	<template>
+		<name>SafeModeController</name>
+		<declaration>clock rc;</declaration>
+		<location id="id71" x="40" y="80">
+			<name x="30" y="50">Operational</name>
+		</location>
+		<location id="id72" x="190" y="80">
+			<name x="180" y="50">Safe</name>
+			<label kind="invariant" x="180" y="95">rc &lt;= T_recovery_max</label>
+		</location>
+		<init ref="id71"/>
+		<transition id="id73">
+			<source ref="id71"/>
+			<target ref="id72"/>
+			<label kind="guard" x="55" y="50">intrusion_detected &amp;&amp; t_detect &lt;= Td_max</label>
+			<label kind="assignment" x="55" y="80">safe_mode = true, rc = 0</label>
+		</transition>
+		<transition id="id74">
+			<source ref="id71"/>
+			<target ref="id72"/>
+			<label kind="guard" x="55" y="50">operator_ack</label>
+			<label kind="assignment" x="55" y="80">safe_mode = true, rc = 0</label>
+		</transition>
+		<transition id="id75">
+			<source ref="id72"/>
+			<target ref="id72"/>
+			<label kind="guard" x="130" y="50">rc &gt;= T_recovery_min &amp;&amp; !fdi_active &amp;&amp; !replay_active &amp;&amp; !dos_active &amp;&amp; !cmdinj_active</label>
+			<label kind="assignment" x="130" y="80">clean_count = (clean_count &lt; THETA_CLEAN ? clean_count + 1 : clean_count), rc = 0</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id76">
+			<source ref="id72"/>
+			<target ref="id72"/>
+			<label kind="guard" x="130" y="50">rc &gt;= T_recovery_min &amp;&amp; (fdi_active || replay_active || dos_active || cmdinj_active)</label>
+			<label kind="assignment" x="130" y="80">clean_count = 0, rc = 0</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id77">
+			<source ref="id72"/>
+			<target ref="id71"/>
+			<label kind="guard" x="55" y="50">clean_count &gt;= THETA_CLEAN</label>
+			<label kind="assignment" x="55" y="80">safe_mode = false, clean_count = 0, intrusion_detected = false, operator_ack = false, rc = 0</label>
+		</transition>
+	</template>
+	<template>
+		<name>Watchdog</name>
+		<location id="id78" x="40" y="80">
+			<name x="30" y="50">Alive</name>
+			<label kind="invariant" x="30" y="95">heartbeat &lt;= WD_max</label>
+		</location>
+		<init ref="id78"/>
+		<transition id="id79">
+			<source ref="id78"/>
+			<target ref="id78"/>
+			<label kind="guard" x="-20" y="50">heartbeat &gt;= WD_min &amp;&amp; (safe_mode || !intrusion_detected)</label>
+			<label kind="assignment" x="-20" y="80">watchdog_miss = 0, heartbeat = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id80">
+			<source ref="id78"/>
+			<target ref="id78"/>
+			<label kind="guard" x="-20" y="50">heartbeat &gt;= WD_min &amp;&amp; intrusion_detected &amp;&amp; !safe_mode &amp;&amp; watchdog_miss &lt; WD_LIMIT</label>
+			<label kind="assignment" x="-20" y="80">watchdog_miss = watchdog_miss + 1, heartbeat = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id81">
+			<source ref="id78"/>
+			<target ref="id78"/>
+			<label kind="guard" x="-20" y="50">heartbeat &gt;= WD_min &amp;&amp; intrusion_detected &amp;&amp; !safe_mode &amp;&amp; watchdog_miss &gt;= WD_LIMIT</label>
+			<label kind="assignment" x="-20" y="80">backup_shutdown = true, watchdog_miss = 0, heartbeat = 0</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<system>
+tank0   = PhysicalProcess(0);
+tank1   = PhysicalProcess(1);
+sensor0 = Sensor(0);
+sensor1 = Sensor(1);
+flow0   = FlowSensor(0);
+flow1   = FlowSensor(1);
+net0    = CommunicationNetwork(0);
+net1    = CommunicationNetwork(1);
+twin0   = DigitalTwin(0);
+twin1   = DigitalTwin(1);
+plc     = PLC();
+ids     = AI_IDS();
+operator = Operator();
+safe    = SafeModeController();
+wd      = Watchdog();
+adv     = Adversary();
+
+system tank0, tank1, sensor0, sensor1, flow0, flow1, net0, net1, twin0, twin1,
+       plc, ids, operator, safe, wd, adv;
+</system>
+	<queries>
+		<query>
+			<formula>E&lt;&gt; (fdi_active &amp;&amp; intrusion_detected)</formula>
+			<comment>Q1: FDI attack produces a detectable IDS signal</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 20:25:37 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (replay_active &amp;&amp; twin_error[0])</formula>
+			<comment>Q2: Replay attack causes observable digital-twin inconsistency (tank 0)</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 20:25:40 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (replay_active &amp;&amp; twin_error[1])</formula>
+			<comment>Q3: Replay attack causes observable digital-twin inconsistency (tank 1)</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 20:25:42 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (dos_active &amp;&amp; ai_alarm)</formula>
+			<comment>Q4: DoS-induced communication disruption triggers the AI alarm</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 20:25:45 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (cmdinj_active &amp;&amp; intrusion_detected)</formula>
+			<comment>Q5: Command-injection attack is detectable</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 20:25:47 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; ((fdi_active || replay_active || dos_active || cmdinj_active) &amp;&amp; ai_alarm)</formula>
+			<comment>Q6: Detection pipeline is reachable under any single attack vector</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 20:25:50 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; ((fdi_active || replay_active) &amp;&amp; (twin_error[0] || twin_error[1]))</formula>
+			<comment>Q7: Physics-based consistency check independently identifies integrity violations</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 20:25:51 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; ((fdi_active &amp;&amp; dos_active) &amp;&amp; ai_alarm)</formula>
+			<comment>Q8: Hybrid (FDI+DoS) attack is detectable</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 20:25:53 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (tank_level[1]==OVERFLOW &amp;&amp; backup_shutdown)</formula>
+			<comment>Q10: Backup shutdown engages under critical overflow on tank 1</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (safe_mode &amp;&amp; !pump_state[0] &amp;&amp; !pump_state[1])</formula>
+			<comment>Q11: Safe mode halts all pump actuation</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (tank_level[0]==OVERFLOW &amp;&amp; (safe_mode || backup_shutdown))</formula>
+			<comment>Q12: Overflow and mitigation can coexist (delayed-response scenario)</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (cmdinj_active &amp;&amp; tank_level[0]==OVERFLOW)</formula>
+			<comment>Q13: Command injection can drive tank 0 to overflow (counterexample-style risk query)</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (safe_mode==false &amp;&amp; !fdi_active &amp;&amp; !replay_active &amp;&amp; !dos_active &amp;&amp; !cmdinj_active)</formula>
+			<comment>Q14: System can fully return to normal operation once all attacks cease</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; safe_mode</formula>
+			<comment>Q15: Safe mode is reachable under adversarial conditions</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (safe_mode &amp;&amp; clean_count&gt;=1)</formula>
+			<comment>Q16: Recovery progresses through a verified stabilisation phase</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (safe_mode==false &amp;&amp; clean_count==0 &amp;&amp; !intrusion_detected)</formula>
+			<comment>Q17: Full clean recovery state is reachable</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; ((fdi_active || replay_active || dos_active || cmdinj_active) &amp;&amp; safe_mode)</formula>
+			<comment>Q18: Attack-to-recovery (safe-mode) transition exists</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (ai_alarm &amp;&amp; operator_ack)</formula>
+			<comment>Q19: AI alarm propagates to the human operator; ack is reachable</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (intrusion_detected &amp;&amp; operator_ack)</formula>
+			<comment>Q20: Detection signal reaches the operator</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (operator_ack &amp;&amp; safe_mode)</formula>
+			<comment>Q21: Operator acknowledgement can trigger safe-mode activation</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (operator_ack &amp;&amp; backup_shutdown)</formula>
+			<comment>Q22: Operator acknowledgement can trigger backup shutdown</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (ai_alarm &amp;&amp; operator_ack &amp;&amp; safe_mode)</formula>
+			<comment>Q23: Complete decision chain - AI detection, human ack, safe-mode - is jointly reachable</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (watchdog_miss&gt;=WD_LIMIT &amp;&amp; backup_shutdown)</formula>
+			<comment>Q24: Watchdog escalates to backup shutdown after sustained undetected anomaly</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (backup_shutdown &amp;&amp; !pump_state[0] &amp;&amp; !pump_state[1])</formula>
+			<comment>Q25: Backup shutdown halts all pump actuation</comment>
+		</query>
+		<query>
+			<formula>A[] not deadlock</formula>
+			<comment>Q26: Deadlock freedom - the system never reaches a state with no enabled transitions</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; (safe_mode==false)</formula>
+			<comment>Q27: System can exit safe mode and resume normal operation</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 23:07:24 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; pump_state[0]</formula>
+			<comment>Q28: Control responsiveness - pump can be ON</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 23:07:21 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>E&lt;&gt; !pump_state[0]</formula>
+			<comment>Q29: Control responsiveness - pump can be OFF</comment>
+			<result outcome="success" type="quality" timestamp="2026-06-26 23:07:17 +0530">
+			</result>
+		</query>
+		<query>
+			<formula>safe_mode --&gt; !safe_mode</formula>
+			<comment>Q30: Cyclic behaviour - whenever safe mode is entered, normal operation is eventually resumed (leads-to form of the manuscript's nested reachability formula)</comment>
+		</query>
+		<query>
+			<formula>ai_alarm --&gt; operator_ack</formula>
+			<comment>Q31: Detection-response cycle - every AI alarm is eventually acknowledged (leads-to form of the manuscript's nested reachability formula)</comment>
+			<result outcome="failure" type="quality" timestamp="2026-06-26 23:07:07 +0530">
+			</result>
+		</query>
+	</queries>
+</nta>
