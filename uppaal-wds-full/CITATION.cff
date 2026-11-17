@@ -1,5 +1,0 @@
-cff-version: 1.2.0
-message: "Cite this repository as a collection of UPPAAL WDS reference models and supporting documentation."
-title: "UPPAAL Models for Water Distribution Cyber-Physical Systems"
-type: software
-abstract: "Reference timed-automata XML models, extracted queries, model audit and reproducibility documentation for a water distribution cyber-physical system."
