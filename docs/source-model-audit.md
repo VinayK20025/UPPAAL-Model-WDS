@@ -2,7 +2,7 @@
 
 ## Scope
 
-This audit describes the seven supplied XML reference models and their embedded query blocks. The XML files are preserved byte-for-byte under `models/reference/`. The audit does not claim that the models have been freshly verified in this repository.
+This audit describes the seven supplied XML models currently stored directly under `models/` and their embedded query blocks. The corresponding `.q` files are stored directly under `queries/`. This document describes the checked-in artefacts and inherited query structure; it does not claim that the models have been freshly verified by the current repository commit.
 
 ## Model progression
 
@@ -16,18 +16,18 @@ This audit describes the seven supplied XML reference models and their embedded 
 
 ## Embedded query inventory
 
-| Model | Query count |
-|---|---:|
-| Baseline_CPS_WDS.xml | 2 |
-| CPS_WDS_Secuity_Framework.xml | 7 |
-| CPS_WDS_With_Attacks.xml | 5 |
-| CPS_WDS_With_Defence.xml | 3 |
-| CPS_WDS_Industry5_AI_Human_Timed_Verification.xml | 5 |
-| Advanced_CPS_WDS.xml | 1 |
-| CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml | 30 |
-| **Total** | **53** |
+| Model | Query file | Query count |
+|---|---|---:|
+| `Baseline_CPS_WDS.xml` | `Baseline_CPS_WDS.q` | 2 |
+| `CPS_WDS_Secuity_Framework.xml` | `CPS_WDS_Secuity_Framework.q` | 7 |
+| `CPS_WDS_With_Attacks.xml` | `CPS_WDS_With_Attacks.q` | 5 |
+| `CPS_WDS_With_Defence.xml` | `CPS_WDS_With_Defence.q` | 3 |
+| `CPS_WDS_Industry5_AI_Human_Timed_Verification.xml` | Matching query file | 5 |
+| `Advanced_CPS_WDS.xml` | `Advanced_CPS_WDS.q` | 1 |
+| `CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml` | Matching query file | 30 |
+| **Total** | | **53** |
 
-The historical XML result attributes are counted in `results/inherited/query-inventory.json`: 20 `success`, 6 `failure`, 27 `NOT_RECORDED`.
+Historical result counts previously extracted from the source XML annotations were 20 `success`, 6 `failure` and 27 `NOT_RECORDED`. Treat these only as inherited XML metadata, not fresh verifier outcomes. Re-extract and compare them against the exact current XML files before using them as experimental data.
 
 ## Interpretation constraints
 

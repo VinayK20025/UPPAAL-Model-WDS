@@ -1,5 +1,15 @@
 # Query and Property Guide
 
+## Query file organisation
+
+The current top-level repository stores model XML files under `models/` and corresponding query files under `queries/`, using matching basenames. For example:
+
+```bash
+verifyta -t 1 models/Baseline_CPS_WDS.xml queries/Baseline_CPS_WDS.q
+```
+
+The `.q` files contain query formulae. The source XML query blocks are the provenance reference. Query counts and filenames are summarised in `docs/source-model-audit.md`.
+
 ## UPPAAL operators
 
 - `E<> p`: some execution reaches a state satisfying `p` (existential reachability).

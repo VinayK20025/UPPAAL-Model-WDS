@@ -1,14 +1,18 @@
 # WDS Model Lineage and Component Outline
 
-| Source model | Principal elements and concerns | Query count |
-|---|---|---:|
-| `Baseline_CPS_WDS.xml` | Tank, Sensor, PLC, Pump | 2 |
-| `CPS_WDS_Secuity_Framework.xml` | Tank, Sensor, Network, IDS, PLC, Pump | 7 |
-| `CPS_WDS_With_Attacks.xml` | Baseline plus FDI, replay and DoS adversarial behaviours | 5 |
-| `CPS_WDS_With_Defence.xml` | Attack/defence setting with SafeMode | 3 |
-| `CPS_WDS_Industry5_AI_Human_Timed_Verification.xml` | AI_IDS, Operator, SafeMode and timed response | 5 |
-| `Advanced_CPS_WDS.xml` | PipeFlow, DigitalTwin, AI_IDS, Operator, Watchdog, Logger, BackupControl and related elements | 1 |
-| `CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml` | Timed physical process, sensors, communications, twin, PLC, AI_IDS, Operator, Adversary, SafeModeController and Watchdog | 30 |
+The following table describes the seven XML models currently stored directly under `models/`. Their matching query files are stored directly under `queries/`.
+
+| Source model | Query file | Principal elements and concerns | Query count |
+|---|---|---|---:|
+| `Baseline_CPS_WDS.xml` | `Baseline_CPS_WDS.q` | Tank, Sensor, PLC, Pump | 2 |
+| `CPS_WDS_Secuity_Framework.xml` | `CPS_WDS_Secuity_Framework.q` | Tank, Sensor, Network, IDS, PLC, Pump | 7 |
+| `CPS_WDS_With_Attacks.xml` | `CPS_WDS_With_Attacks.q` | Baseline plus FDI, replay and DoS adversarial behaviours | 5 |
+| `CPS_WDS_With_Defence.xml` | `CPS_WDS_With_Defence.q` | Attack/defence setting with SafeMode | 3 |
+| `CPS_WDS_Industry5_AI_Human_Timed_Verification.xml` | Matching query file | AI_IDS, Operator, SafeMode and timed response | 5 |
+| `Advanced_CPS_WDS.xml` | `Advanced_CPS_WDS.q` | PipeFlow, DigitalTwin, AI_IDS, Operator, Watchdog, Logger, BackupControl and related elements | 1 |
+| `CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml` | Matching query file | Timed physical process, sensors, communications, twin, PLC, AI_IDS, Operator, Adversary, SafeModeController and Watchdog | 30 |
+
+The spelling `Secuity` is retained in the filename exactly as present in the supplied source artefact.
 
 ## Component responsibilities
 
@@ -23,6 +27,8 @@
 - **Human response:** operator acknowledgement and response transitions.
 - **Recovery:** safe mode, watchdog escalation and backup control.
 
-## Guidance for derived models
+## Guidance for future derived models
 
-Keep physical state, sensed value, delivered value, controller command, actuator state, attack state, alarm state and recovery state separate. Model component failures separately from relationship failures. Any derived file must record its parent model, changed constructs, rationale and verification status in a lineage note.
+The present top-level repository stores the supplied XML files in `models/`; it does not currently provide a top-level `models/reference/` or `models/derived/` directory. Keep supplied inputs unchanged. When introducing derived variants, create a clearly separated location and document each variant's parent model, changed constructs, rationale and verification status.
+
+Keep physical state, sensed value, delivered value, controller command, actuator state, attack state, alarm state and recovery state separate. Model component failures separately from relationship failures.

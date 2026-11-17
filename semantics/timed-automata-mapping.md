@@ -11,4 +11,4 @@ A timed automaton can be represented as `TA = (L, l0, X, V, E, Inv)`, with locat
 - Map recovery contracts to trigger, pending obligation, deadline, action, completion and failure/timeout behaviour.
 - Maintain traceability from source model elements to template/location/transition identifiers and query IDs.
 
-This document is a working mapping specification; it does not assert a proven semantics-preserving transformation. Any preservation claim requires a formal definition and evidence.
+This document is a working mapping specification. The top-level repository does not currently contain an executable metamodel-to-UPPAAL transformation pipeline or a proof of semantics preservation. Any claim of automated transformation or preservation requires a defined implementation and supporting evidence.

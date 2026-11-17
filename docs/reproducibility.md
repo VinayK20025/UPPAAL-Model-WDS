@@ -1,41 +1,47 @@
 # Reproducibility Procedure
 
-## 1. Preserve inputs
+## 1. Canonical paths
 
-Keep supplied XML files unchanged under `models/reference/`. Create modified variants under `models/derived/` and document their lineage.
+Run all commands from the repository root. The current top-level layout is authoritative:
 
-## 2. Validate and extract
+- Models: `models/<model-name>.xml`
+- Queries: `queries/<model-name>.q`
+- Documentation: `docs/`
+- Validation scripts: `scripts/`
 
-From the repository root:
+The nested `uppaal-wds-full/` directory is an earlier package snapshot and is not used by the current top-level scripts or commands.
+
+## 2. Validate the source XML
 
 ```bash
 python scripts/validate_models.py
-python scripts/extract_inherited_results.py
 ```
+
+This parses the top-level XML files and reports embedded query counts. It does not execute UPPAAL or prove that models are semantically correct.
 
 ## 3. Run UPPAAL
 
 Record the exact UPPAAL version/build and execute the verifier against a declared model/query pair. Example:
 
 ```bash
-verifyta -t 1 models/reference/Baseline_CPS_WDS.xml queries/inherited/Baseline_CPS_WDS.q
+verifyta -t 1 models/Baseline_CPS_WDS.xml queries/Baseline_CPS_WDS.q
 ```
 
-The command is illustrative only. Do not treat it as a completed run.
+This command is illustrative only. Do not treat it as a completed run.
 
 ## 4. Record every fresh run
 
-For each run, preserve model and query paths, SHA-256 hashes, UPPAAL version/build, OS, exact command, working directory, start/end time, exit status, raw stdout/stderr and per-query result. Store the run record and raw outputs under `results/reproduced/`.
+For each run, preserve model and query paths, SHA-256 hashes, UPPAAL version/build, OS, exact command, working directory, start/end time, exit status, raw stdout/stderr and per-query result. Store fresh run records in a clearly named results directory introduced for that purpose; do not mix them with inherited source annotations.
 
 Hash inputs with:
 
 ```bash
-sha256sum models/reference/Baseline_CPS_WDS.xml queries/inherited/Baseline_CPS_WDS.q
+sha256sum models/Baseline_CPS_WDS.xml queries/Baseline_CPS_WDS.q
 ```
 
 ## 5. Separate evidence classes
 
-`results/inherited/` contains historical XML annotations. `results/reproduced/` is reserved for fresh executions with complete provenance. Do not overwrite or relabel inherited outcomes.
+Historical annotations embedded in XML are source metadata, not freshly reproduced verifier records. A result must not be labelled reproduced unless the exact model/query pair has been run using a recorded tool version and its raw output has been retained.
 
 ## 6. Counterexample review
 

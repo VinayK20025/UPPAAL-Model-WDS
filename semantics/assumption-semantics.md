@@ -17,3 +17,5 @@ Avoid hiding all assumptions solely in guards or invariants where doing so remov
 ## Composition
 
 For an interface contract `C_i = (I_i, O_i, A_i, G_i)`, define assumptions and guarantees with explicit scope. A composition obligation may require a provider guarantee to imply the consumer assumption, `G_j => A_i`, under a declared interface mapping. This is a modelling obligation and must not be claimed as proven without an appropriate check.
+
+This document specifies intended semantics; it does not itself establish that the supplied UPPAAL models implement all of these constructs.

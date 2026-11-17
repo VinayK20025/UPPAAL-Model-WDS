@@ -1,63 +1,75 @@
 # UPPAAL Models for Water Distribution Cyber–Physical Systems
 
-This repository contains seven reference UPPAAL XML models for a water distribution system (WDS), their extracted query files, a machine-readable inherited-query inventory, modelling notes and reproducibility guidance.
+This repository contains seven supplied UPPAAL XML models for a water distribution system (WDS), matching query files, supporting documentation and an archival package snapshot.
 
-## Repository layout
+## Current repository layout
+
+The **top-level files and directories are authoritative**. The repository currently uses a flat model/query layout:
 
 ```text
 .
-├── models/reference/       # Original supplied XML models; keep unchanged
-├── models/derived/         # Reviewed variants, with lineage notes
-├── queries/inherited/      # Formulae extracted from source XML
-├── queries/catalogue.md    # Query inventory and interpretation
-├── results/inherited/      # Historical XML annotations, not fresh runs
-├── results/reproduced/     # Fresh verifier records and raw output
-├── docs/                   # Model lineage, assumptions, scope, reproducibility
-├── metamodel/              # Assumption-aware WDS/CPS metamodel
-├── semantics/              # Assumption semantics and timed-automata mapping
-├── scripts/                # XML validation and inventory extraction
-├── tests/                  # Validation guidance
-└── experiments/configs/    # Experiment configuration guidance
+├── models/                         # Seven supplied UPPAAL XML models
+│   ├── Advanced_CPS_WDS.xml
+│   ├── Baseline_CPS_WDS.xml
+│   ├── CPS_WDS_Industry5_AI_Human_Timed_Verification.xml
+│   ├── CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml
+│   ├── CPS_WDS_Secuity_Framework.xml
+│   ├── CPS_WDS_With_Attacks.xml
+│   └── CPS_WDS_With_Defence.xml
+├── queries/                        # Matching .q files and catalogue
+├── docs/                           # Model lineage, audit, query and reproducibility notes
+├── scripts/                        # XML validation and query extraction
+├── metamodel/                      # Conceptual metamodel working specification
+├── semantics/                     # Assumption and timed-automata mapping specifications
+├── FILE-MANIFEST.json              # Manifest for the canonical top-level package
+├── uppaal-wds-full/                # Earlier structured package snapshot (archive contents)
+└── uppaal-wds-full.tar             # Archive of the earlier structured package
 ```
+
+The nested `uppaal-wds-full/` directory is a retained package snapshot from an earlier layout. It is **not** the current working tree and should not be used as the source of truth for the top-level repository. Its documentation and scripts retain paths from that earlier structure.
 
 ## Reference models and query counts
 
-| Model | Query count | Focus |
-|---|---:|---|
-| `Baseline_CPS_WDS.xml` | 2 | Tank, sensor, PLC and pump baseline |
-| `CPS_WDS_Secuity_Framework.xml` | 7 | Network and IDS security framework |
-| `CPS_WDS_With_Attacks.xml` | 5 | Attack-enabled model: FDI, replay and DoS behaviours |
-| `CPS_WDS_With_Defence.xml` | 3 | Defensive response and safe mode |
-| `CPS_WDS_Industry5_AI_Human_Timed_Verification.xml` | 5 | Timed AI/IDS and operator response |
-| `Advanced_CPS_WDS.xml` | 1 | Expanded monitoring, twin, watchdog and backup control |
-| `CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml` | 30 | Advanced timed multi-component model |
-| **Total** | **53** | |
+| Model | Query file | Queries | Focus |
+|---|---|---:|---|
+| `Baseline_CPS_WDS.xml` | `Baseline_CPS_WDS.q` | 2 | Tank, sensor, PLC and pump baseline |
+| `CPS_WDS_Secuity_Framework.xml` | `CPS_WDS_Secuity_Framework.q` | 7 | Network and IDS security framework |
+| `CPS_WDS_With_Attacks.xml` | `CPS_WDS_With_Attacks.q` | 5 | FDI, replay and DoS behaviours |
+| `CPS_WDS_With_Defence.xml` | `CPS_WDS_With_Defence.q` | 3 | Defensive response and safe mode |
+| `CPS_WDS_Industry5_AI_Human_Timed_Verification.xml` | Matching query file | 5 | Timed AI/IDS and operator response |
+| `Advanced_CPS_WDS.xml` | `Advanced_CPS_WDS.q` | 1 | Expanded monitoring, twin, watchdog and backup control |
+| `CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml` | Matching query file | 30 | Advanced timed multi-component model |
+| **Total** | | **53** | |
 
-The original spelling `Secuity` in one filename is preserved for source traceability.
+The original spelling `Secuity` in one filename is intentionally preserved for source traceability.
 
 ## Quick start
 
-1. Install UPPAAL and record the exact version/build.
-2. Open a model under `models/reference/` in the UPPAAL GUI, or run the verifier.
-3. Use the corresponding `.q` file under `queries/inherited/`.
-4. Preserve the exact command, model/query SHA-256 hashes, tool version and raw output.
-
-Example command:
+Run commands from the repository root.
 
 ```bash
-verifyta -t 1 models/reference/Baseline_CPS_WDS.xml queries/inherited/Baseline_CPS_WDS.q
+python scripts/validate_models.py
+python scripts/extract_inherited_results.py
 ```
 
-This is a reproducibility instruction, not evidence that the command has been run in this repository.
+Open a model in UPPAAL, or run the verifier using the corresponding top-level query file:
+
+```bash
+verifyta -t 1 models/Baseline_CPS_WDS.xml queries/Baseline_CPS_WDS.q
+```
+
+The command is an execution instruction, not evidence that the command has been run. Record the exact UPPAAL version/build, command, input hashes and raw output for each fresh run.
 
 ## Evidence interpretation
 
-The 53 formulae were extracted from the XML query blocks. The source XMLs contain 20 `success`, 6 `failure`, and 27 `NOT_RECORDED` historical result annotations. These annotations are retained as **inherited source metadata**, not current UPPAAL executions. Fresh runs belong in `results/reproduced/` and must include complete provenance.
+The seven XML models contain 53 embedded queries. Historical result annotations in the source XML are not fresh verifier executions. The earlier package snapshot includes a machine-readable inherited query inventory; consult it as archived metadata and regenerate/check it against the current top-level source files before relying on it.
 
-UPPAAL `E<> p` expresses existential reachability; it is not an inevitability guarantee. A reachable alarm does not establish complete attack detection, and a reachable recovery state does not establish inevitable recovery. Failed properties and counterexamples must be preserved and discussed.
+UPPAAL `E<> p` expresses existential reachability, not inevitability. Reachable alarms do not establish complete detection coverage; reachable recovery states do not establish inevitable recovery. Failed properties and counterexamples must be retained and discussed. See `docs/source-model-audit.md` and `docs/query-and-property-guide.md`.
 
-See `docs/source-model-audit.md`, `docs/query-and-property-guide.md` and `docs/reproducibility.md` before making claims based on the models.
+## Current validation scope
+
+`scripts/validate_models.py` checks XML parsing and embedded query counts. It does not perform UPPAAL verification, establish semantic correctness, or validate the extracted query files against a separately stored query corpus. Use the scripts only for the checks they actually implement.
 
 ## Licence
 
-No licence is asserted in this repository. Confirm ownership and reuse conditions for every supplied model and dependency before adding a licence.
+No licence is asserted. Confirm ownership and reuse conditions for all supplied models and dependencies before adding a licence.
