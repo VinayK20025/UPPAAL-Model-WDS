@@ -1,0 +1,992 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<nta>
+	<declaration>
+
+/* ==================== SYSTEM SCALE ==================== */
+const int N = 2;
+
+/* ==================== LEVEL ENCODING ==================== */
+const int EMPTY    = 0;
+const int LOW      = 1;
+const int NORMAL   = 2;
+const int HIGH     = 3;
+const int OVERFLOW = 4;
+
+/* ==================== RECOVERY POLICY ==================== */
+const int RECOVERY_THRESHOLD = 3;
+const int MAX_RECOVERY_TIME  = 10;
+const int FLOW               = 1;
+
+/* ==================== PHYSICAL LAYER ==================== */
+int[0,4] tank_level[N];
+
+/* ==================== SENSOR LAYER ==================== */
+int[0,4] sensor_level[N];
+int[0,4] secure_sensor_level[N];
+int[0,4] replay_buffer[N];
+
+/* ==================== DIGITAL TWIN ==================== */
+int[0,4] twin_estimate[N];
+bool     twin_error[N];
+int[0,5] twin_sync_count[N];
+
+/* ==================== CONTROL LAYER ==================== */
+bool pump_state[N];
+bool pump_cmd_on[N];
+bool pump_cmd_off[N];
+
+/* ==================== SECURITY STATE ==================== */
+bool intrusion_detected = false;
+bool ai_alarm           = false;
+bool operator_ack       = false;
+bool safe_mode          = false;
+bool backup_shutdown    = false;
+
+/* ==================== ATTACK STATE ==================== */
+bool   fdi_active    = false;
+bool   replay_active = false;
+bool   dos_active    = false;
+int[0,3] attack_intensity[3];
+
+/* ==================== RECOVERY COUNTER ==================== */
+int[0,RECOVERY_THRESHOLD] clean_count = 0;
+
+/* ==================== CLOCKS ==================== */
+clock t_detect;
+clock t_response;
+clock heartbeat;
+clock recovery_time;
+
+/* ==================== CHANNELS ==================== */
+chan sensor_sample;
+chan net_sensor;
+chan net_control;
+chan log_event;
+chan heartbeat_tick;
+chan recovery_start;
+
+</declaration>
+	<template>
+		<name>Tank</name>
+		<parameter>int id</parameter>
+		<location id="id0" x="40" y="80">
+		</location>
+		<location id="id1" x="190" y="80">
+		</location>
+		<location id="id2" x="190" y="230">
+		</location>
+		<location id="id3" x="40" y="230">
+		</location>
+		<init ref="id0"/>
+		<transition id="id4">
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="assignment" x="55" y="80">tank_level[id] = NORMAL</label>
+		</transition>
+		<transition id="id5">
+			<source ref="id1"/>
+			<target ref="id2"/>
+			<label kind="guard" x="130" y="125">pump_state[id] &amp;&amp; tank_level[id] &gt;= HIGH</label>
+			<label kind="assignment" x="130" y="155">tank_level[id] = (tank_level[id] &lt; OVERFLOW ? tank_level[id] + FLOW : OVERFLOW)</label>
+		</transition>
+		<transition id="id6">
+			<source ref="id1"/>
+			<target ref="id1"/>
+			<label kind="guard" x="130" y="50">pump_state[id] &amp;&amp; tank_level[id] &lt; HIGH</label>
+			<label kind="assignment" x="130" y="80">tank_level[id] = (tank_level[id] &lt; OVERFLOW ? tank_level[id] + FLOW : OVERFLOW)</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id7">
+			<source ref="id1"/>
+			<target ref="id1"/>
+			<label kind="guard" x="130" y="50">!pump_state[id] &amp;&amp; tank_level[id] &gt; LOW</label>
+			<label kind="assignment" x="130" y="80">tank_level[id] = (tank_level[id] &gt; 0 ? tank_level[id] - FLOW : EMPTY)</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id8">
+			<source ref="id2"/>
+			<target ref="id3"/>
+			<label kind="guard" x="55" y="200">tank_level[id] == OVERFLOW</label>
+		</transition>
+		<transition id="id9">
+			<source ref="id2"/>
+			<target ref="id1"/>
+			<label kind="guard" x="130" y="125">!pump_state[id] &amp;&amp; tank_level[id] &lt; HIGH</label>
+			<label kind="assignment" x="130" y="155">tank_level[id] = (tank_level[id] &gt; 0 ? tank_level[id] - FLOW : EMPTY)</label>
+		</transition>
+		<transition id="id10">
+			<source ref="id3"/>
+			<target ref="id3"/>
+			<label kind="guard" x="-20" y="200">tank_level[id] == OVERFLOW</label>
+			<nail x="10" y="200"/>
+			<nail x="70" y="200"/>
+		</transition>
+		<transition id="id11">
+			<source ref="id3"/>
+			<target ref="id1"/>
+			<label kind="guard" x="55" y="125">tank_level[id] &lt; HIGH &amp;&amp; safe_mode</label>
+			<label kind="assignment" x="55" y="155">tank_level[id] = NORMAL</label>
+		</transition>
+	</template>
+	<template>
+		<name>PipeFlow</name>
+		<location id="id12" x="40" y="80">
+		</location>
+		<init ref="id12"/>
+		<transition id="id13">
+			<source ref="id12"/>
+			<target ref="id12"/>
+			<label kind="assignment" x="-20" y="80">tank_level[1] = tank_level[0]</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>Sensor</name>
+		<parameter>int id</parameter>
+		<location id="id14" x="40" y="80">
+		</location>
+		<location id="id15" x="190" y="80">
+		</location>
+		<location id="id16" x="190" y="230">
+		</location>
+		<location id="id17" x="40" y="230">
+		</location>
+		<init ref="id14"/>
+		<transition id="id18">
+			<source ref="id14"/>
+			<target ref="id15"/>
+		</transition>
+		<transition id="id19">
+			<source ref="id15"/>
+			<target ref="id16"/>
+			<label kind="guard" x="130" y="125">tank_level[id] &gt;= EMPTY &amp;&amp; tank_level[id] &lt;= OVERFLOW</label>
+			<label kind="assignment" x="130" y="155">sensor_level[id]  = tank_level[id],
+    replay_buffer[id] = sensor_level[id]</label>
+		</transition>
+		<transition id="id20">
+			<source ref="id16"/>
+			<target ref="id17"/>
+			<label kind="assignment" x="55" y="230">twin_estimate[id]    = sensor_level[id],
+    twin_sync_count[id]  = (twin_sync_count[id] &lt; 5 ? twin_sync_count[id] + 1 : 5)</label>
+		</transition>
+		<transition id="id21">
+			<source ref="id17"/>
+			<target ref="id17"/>
+			<label kind="synchronisation" x="-20" y="215">sensor_sample!</label>
+			<label kind="assignment" x="-20" y="230">sensor_level[id]  = tank_level[id],
+    replay_buffer[id] = sensor_level[id],
+    twin_estimate[id] = tank_level[id]</label>
+			<nail x="10" y="200"/>
+			<nail x="70" y="200"/>
+		</transition>
+		<transition id="id22">
+			<source ref="id17"/>
+			<target ref="id15"/>
+		</transition>
+	</template>
+	<template>
+		<name>Network</name>
+		<location id="id23" x="40" y="80">
+		</location>
+		<location id="id24" x="190" y="80">
+		</location>
+		<location id="id25" x="190" y="230">
+		</location>
+		<location id="id26" x="40" y="230">
+		</location>
+		<location id="id27" x="340" y="80">
+		</location>
+		<init ref="id23"/>
+		<transition id="id28">
+			<source ref="id23"/>
+			<target ref="id24"/>
+		</transition>
+		<transition id="id29">
+			<source ref="id24"/>
+			<target ref="id25"/>
+			<label kind="guard" x="130" y="125">(fdi_active || replay_active) &amp;&amp; !dos_active</label>
+			<label kind="assignment" x="130" y="155">attack_intensity[0] = (fdi_active    ? 2 : 0),
+    attack_intensity[1] = (replay_active ? 2 : 0)</label>
+		</transition>
+		<transition id="id30">
+			<source ref="id24"/>
+			<target ref="id26"/>
+			<label kind="guard" x="55" y="125">dos_active</label>
+			<label kind="assignment" x="55" y="155">attack_intensity[2] = 3</label>
+		</transition>
+		<transition id="id31">
+			<source ref="id25"/>
+			<target ref="id27"/>
+			<label kind="guard" x="205" y="125">dos_active || (fdi_active &amp;&amp; replay_active)</label>
+			<label kind="assignment" x="205" y="155">attack_intensity[0] = (fdi_active    ? 3 : 0),
+    attack_intensity[1] = (replay_active ? 3 : 0),
+    attack_intensity[2] = (dos_active    ? 3 : 0)</label>
+		</transition>
+		<transition id="id32">
+			<source ref="id26"/>
+			<target ref="id24"/>
+			<label kind="guard" x="55" y="125">!dos_active</label>
+			<label kind="assignment" x="55" y="155">attack_intensity[2] = 0</label>
+		</transition>
+		<transition id="id33">
+			<source ref="id25"/>
+			<target ref="id24"/>
+			<label kind="guard" x="130" y="125">!fdi_active &amp;&amp; !replay_active</label>
+			<label kind="assignment" x="130" y="155">attack_intensity[0] = 0,
+    attack_intensity[1] = 0</label>
+		</transition>
+		<transition id="id34">
+			<source ref="id27"/>
+			<target ref="id25"/>
+			<label kind="guard" x="205" y="125">dos_active &amp;&amp; !(fdi_active &amp;&amp; replay_active)</label>
+			<label kind="assignment" x="205" y="155">attack_intensity[2] = 0</label>
+		</transition>
+		<transition id="id35">
+			<source ref="id24"/>
+			<target ref="id24"/>
+			<label kind="synchronisation" x="130" y="65">net_sensor!</label>
+			<label kind="assignment" x="130" y="80">secure_sensor_level[0] = (replay_active ? replay_buffer[0] : (fdi_active ? LOW : sensor_level[0])),
+    secure_sensor_level[1] = (replay_active ? replay_buffer[1] : (fdi_active ? LOW : sensor_level[1]))</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id36">
+			<source ref="id25"/>
+			<target ref="id25"/>
+			<label kind="synchronisation" x="130" y="215">net_sensor!</label>
+			<label kind="assignment" x="130" y="230">secure_sensor_level[0] = (replay_active ? replay_buffer[0] : (fdi_active ? LOW : sensor_level[0])),
+    secure_sensor_level[1] = (replay_active ? replay_buffer[1] : (fdi_active ? LOW : sensor_level[1]))</label>
+			<nail x="160" y="200"/>
+			<nail x="220" y="200"/>
+		</transition>
+		<transition id="id37">
+			<source ref="id27"/>
+			<target ref="id27"/>
+			<label kind="synchronisation" x="280" y="65">net_sensor!</label>
+			<label kind="assignment" x="280" y="80">secure_sensor_level[0] = (replay_active ? replay_buffer[0] : (fdi_active ? LOW : sensor_level[0])),
+    secure_sensor_level[1] = (replay_active ? replay_buffer[1] : (fdi_active ? LOW : sensor_level[1]))</label>
+			<nail x="310" y="50"/>
+			<nail x="370" y="50"/>
+		</transition>
+	</template>
+	<template>
+		<name>DigitalTwin</name>
+		<location id="id38" x="40" y="80">
+		</location>
+		<location id="id39" x="190" y="80">
+		</location>
+		<location id="id40" x="190" y="230">
+		</location>
+		<location id="id41" x="40" y="230">
+		</location>
+		<init ref="id38"/>
+		<transition id="id42">
+			<source ref="id38"/>
+			<target ref="id39"/>
+			<label kind="assignment" x="55" y="80">twin_estimate[0] = tank_level[0],
+    twin_estimate[1] = tank_level[1]</label>
+		</transition>
+		<transition id="id43">
+			<source ref="id39"/>
+			<target ref="id39"/>
+			<label kind="synchronisation" x="130" y="65">net_sensor?</label>
+			<label kind="assignment" x="130" y="80">twin_error[0]       = (twin_estimate[0] != secure_sensor_level[0]),
+    twin_error[1]       = (twin_estimate[1] != secure_sensor_level[1]),
+    twin_sync_count[0]  = (!twin_error[0] ? (twin_sync_count[0] &lt; 5 ? twin_sync_count[0] + 1 : 5) : 0),
+    twin_sync_count[1]  = (!twin_error[1] ? (twin_sync_count[1] &lt; 5 ? twin_sync_count[1] + 1 : 5) : 0)</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id44">
+			<source ref="id39"/>
+			<target ref="id40"/>
+			<label kind="guard" x="130" y="125">twin_error[0] || twin_error[1]</label>
+			<label kind="assignment" x="130" y="155">twin_sync_count[0] = (twin_error[0] ? 0 : twin_sync_count[0]),
+    twin_sync_count[1] = (twin_error[1] ? 0 : twin_sync_count[1]),
+    t_detect = 0</label>
+		</transition>
+		<transition id="id45">
+			<source ref="id40"/>
+			<target ref="id40"/>
+			<label kind="synchronisation" x="130" y="215">net_sensor?</label>
+			<label kind="assignment" x="130" y="230">twin_error[0]      = (twin_estimate[0] != secure_sensor_level[0]),
+    twin_error[1]      = (twin_estimate[1] != secure_sensor_level[1]),
+    twin_sync_count[0] = (!twin_error[0] ? (twin_sync_count[0] &lt; 5 ? twin_sync_count[0] + 1 : 5) : 0),
+    twin_sync_count[1] = (!twin_error[1] ? (twin_sync_count[1] &lt; 5 ? twin_sync_count[1] + 1 : 5) : 0)</label>
+			<nail x="160" y="200"/>
+			<nail x="220" y="200"/>
+		</transition>
+		<transition id="id46">
+			<source ref="id40"/>
+			<target ref="id41"/>
+			<label kind="guard" x="55" y="200">!twin_error[0] &amp;&amp; !twin_error[1]</label>
+			<label kind="assignment" x="55" y="230">recovery_time = 0</label>
+		</transition>
+		<transition id="id47">
+			<source ref="id41"/>
+			<target ref="id41"/>
+			<label kind="guard" x="-20" y="200">twin_sync_count[0] &gt;= 3 &amp;&amp; twin_sync_count[1] &gt;= 3</label>
+			<label kind="assignment" x="-20" y="230">twin_estimate[0] = secure_sensor_level[0],
+    twin_estimate[1] = secure_sensor_level[1]</label>
+			<nail x="10" y="200"/>
+			<nail x="70" y="200"/>
+		</transition>
+		<transition id="id48">
+			<source ref="id41"/>
+			<target ref="id39"/>
+			<label kind="guard" x="55" y="125">twin_sync_count[0] &gt;= 5 &amp;&amp; twin_sync_count[1] &gt;= 5</label>
+		</transition>
+		<transition id="id49">
+			<source ref="id38"/>
+			<target ref="id38"/>
+			<label kind="guard" x="-20" y="50">true</label>
+			<nail x="10" y="50"/>
+			<nail x="70" y="50"/>
+		</transition>
+		<transition id="id50">
+			<source ref="id39"/>
+			<target ref="id39"/>
+			<label kind="guard" x="130" y="50">true</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id51">
+			<source ref="id40"/>
+			<target ref="id40"/>
+			<label kind="guard" x="130" y="200">true</label>
+			<nail x="160" y="200"/>
+			<nail x="220" y="200"/>
+		</transition>
+		<transition id="id52">
+			<source ref="id41"/>
+			<target ref="id41"/>
+			<label kind="guard" x="-20" y="200">true</label>
+			<nail x="10" y="200"/>
+			<nail x="70" y="200"/>
+		</transition>
+	</template>
+	<template>
+		<name>AI_IDS</name>
+		<location id="id53" x="40" y="80">
+		</location>
+		<location id="id54" x="190" y="80">
+		</location>
+		<location id="id55" x="190" y="230">
+		</location>
+		<location id="id56" x="40" y="230">
+		</location>
+		<init ref="id53"/>
+		<transition id="id57">
+			<source ref="id53"/>
+			<target ref="id54"/>
+			<label kind="guard" x="55" y="50">twin_error[0] || twin_error[1]</label>
+			<label kind="assignment" x="55" y="80">intrusion_detected = true,
+    ai_alarm           = true,
+    t_detect           = 0</label>
+		</transition>
+		<transition id="id58">
+			<source ref="id54"/>
+			<target ref="id55"/>
+			<label kind="guard" x="130" y="125">twin_error[0] &amp;&amp; twin_error[1]</label>
+			<label kind="assignment" x="130" y="155">ai_alarm = true</label>
+		</transition>
+		<transition id="id59">
+			<source ref="id54"/>
+			<target ref="id54"/>
+			<label kind="guard" x="130" y="50">(twin_error[0] || twin_error[1]) &amp;&amp; !(twin_error[0] &amp;&amp; twin_error[1])</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id60">
+			<source ref="id55"/>
+			<target ref="id55"/>
+			<label kind="guard" x="130" y="200">twin_error[0] &amp;&amp; twin_error[1]</label>
+			<nail x="160" y="200"/>
+			<nail x="220" y="200"/>
+		</transition>
+		<transition id="id61">
+			<source ref="id54"/>
+			<target ref="id56"/>
+			<label kind="guard" x="55" y="125">!twin_error[0] &amp;&amp; !twin_error[1]</label>
+			<label kind="assignment" x="55" y="155">recovery_time = 0</label>
+		</transition>
+		<transition id="id62">
+			<source ref="id55"/>
+			<target ref="id56"/>
+			<label kind="guard" x="55" y="200">!twin_error[0] &amp;&amp; !twin_error[1]</label>
+			<label kind="assignment" x="55" y="230">recovery_time = 0</label>
+		</transition>
+		<transition id="id63">
+			<source ref="id56"/>
+			<target ref="id56"/>
+			<label kind="guard" x="-20" y="200">!twin_error[0] &amp;&amp; !twin_error[1] &amp;&amp;
+    twin_sync_count[0] &gt;= 2 &amp;&amp; twin_sync_count[1] &gt;= 2</label>
+			<nail x="10" y="200"/>
+			<nail x="70" y="200"/>
+		</transition>
+		<transition id="id64">
+			<source ref="id56"/>
+			<target ref="id53"/>
+			<label kind="guard" x="-20" y="125">!twin_error[0] &amp;&amp; !twin_error[1] &amp;&amp;
+    twin_sync_count[0] &gt;= 3 &amp;&amp; twin_sync_count[1] &gt;= 3</label>
+			<label kind="assignment" x="-20" y="155">intrusion_detected = false,
+    ai_alarm           = false</label>
+		</transition>
+	</template>
+	<template>
+		<name>Attacker</name>
+		<location id="id65" x="40" y="80">
+		</location>
+		<location id="id66" x="190" y="80">
+		</location>
+		<location id="id67" x="190" y="230">
+		</location>
+		<location id="id68" x="40" y="230">
+		</location>
+		<location id="id69" x="340" y="80">
+		</location>
+		<location id="id70" x="340" y="230">
+		</location>
+		<location id="id71" x="340" y="380">
+		</location>
+		<location id="id72" x="190" y="380">
+		</location>
+		<location id="id73" x="40" y="380">
+		</location>
+		<location id="id74" x="490" y="80">
+		</location>
+		<init ref="id65"/>
+		<transition id="id75">
+			<source ref="id65"/>
+			<target ref="id66"/>
+		</transition>
+		<transition id="id76">
+			<source ref="id66"/>
+			<target ref="id67"/>
+			<label kind="assignment" x="130" y="155">fdi_active = true, attack_intensity[0] = 1</label>
+		</transition>
+		<transition id="id77">
+			<source ref="id66"/>
+			<target ref="id68"/>
+			<label kind="assignment" x="55" y="155">replay_active = true, attack_intensity[1] = 1</label>
+		</transition>
+		<transition id="id78">
+			<source ref="id66"/>
+			<target ref="id69"/>
+			<label kind="assignment" x="205" y="80">dos_active = true, attack_intensity[2] = 1</label>
+		</transition>
+		<transition id="id79">
+			<source ref="id67"/>
+			<target ref="id70"/>
+			<label kind="assignment" x="205" y="230">fdi_active = true, replay_active = true,
+    attack_intensity[0] = 2, attack_intensity[1] = 2</label>
+		</transition>
+		<transition id="id80">
+			<source ref="id67"/>
+			<target ref="id71"/>
+			<label kind="assignment" x="205" y="305">fdi_active = true, dos_active = true,
+    attack_intensity[0] = 2, attack_intensity[2] = 2</label>
+		</transition>
+		<transition id="id81">
+			<source ref="id68"/>
+			<target ref="id70"/>
+			<label kind="assignment" x="130" y="230">fdi_active = true, replay_active = true,
+    attack_intensity[0] = 2, attack_intensity[1] = 2</label>
+		</transition>
+		<transition id="id82">
+			<source ref="id68"/>
+			<target ref="id72"/>
+			<label kind="assignment" x="55" y="305">replay_active = true, dos_active = true,
+    attack_intensity[1] = 2, attack_intensity[2] = 2</label>
+		</transition>
+		<transition id="id83">
+			<source ref="id69"/>
+			<target ref="id71"/>
+			<label kind="assignment" x="280" y="230">fdi_active = true, dos_active = true,
+    attack_intensity[0] = 2, attack_intensity[2] = 2</label>
+		</transition>
+		<transition id="id84">
+			<source ref="id69"/>
+			<target ref="id72"/>
+			<label kind="assignment" x="205" y="230">replay_active = true, dos_active = true,
+    attack_intensity[1] = 2, attack_intensity[2] = 2</label>
+		</transition>
+		<transition id="id85">
+			<source ref="id70"/>
+			<target ref="id73"/>
+			<label kind="assignment" x="130" y="305">fdi_active = true, replay_active = true, dos_active = true,
+    attack_intensity[0] = 3, attack_intensity[1] = 3, attack_intensity[2] = 3</label>
+		</transition>
+		<transition id="id86">
+			<source ref="id71"/>
+			<target ref="id73"/>
+			<label kind="assignment" x="130" y="380">fdi_active = true, replay_active = true, dos_active = true,
+    attack_intensity[0] = 3, attack_intensity[1] = 3, attack_intensity[2] = 3</label>
+		</transition>
+		<transition id="id87">
+			<source ref="id72"/>
+			<target ref="id73"/>
+			<label kind="assignment" x="55" y="380">fdi_active = true, replay_active = true, dos_active = true,
+    attack_intensity[0] = 3, attack_intensity[1] = 3, attack_intensity[2] = 3</label>
+		</transition>
+		<transition id="id88">
+			<source ref="id73"/>
+			<target ref="id74"/>
+			<label kind="assignment" x="205" y="230">fdi_active = true, replay_active = true, dos_active = true,
+    attack_intensity[0] = 3, attack_intensity[1] = 3, attack_intensity[2] = 3</label>
+		</transition>
+		<transition id="id89">
+			<source ref="id74"/>
+			<target ref="id74"/>
+			<label kind="guard" x="430" y="50">fdi_active &amp;&amp; replay_active &amp;&amp; dos_active</label>
+			<label kind="assignment" x="430" y="80">attack_intensity[0] = 3, attack_intensity[1] = 3, attack_intensity[2] = 3</label>
+			<nail x="460" y="50"/>
+			<nail x="520" y="50"/>
+		</transition>
+		<transition id="id90">
+			<source ref="id67"/>
+			<target ref="id67"/>
+			<label kind="guard" x="130" y="200">fdi_active &amp;&amp; !replay_active &amp;&amp; !dos_active</label>
+			<label kind="assignment" x="130" y="230">attack_intensity[0] = (attack_intensity[0] &gt; 1 ? attack_intensity[0] - 1 : 1)</label>
+			<nail x="160" y="200"/>
+			<nail x="220" y="200"/>
+		</transition>
+		<transition id="id91">
+			<source ref="id67"/>
+			<target ref="id65"/>
+			<label kind="guard" x="55" y="125">intrusion_detected</label>
+			<label kind="assignment" x="55" y="155">fdi_active = false, attack_intensity[0] = 0</label>
+		</transition>
+		<transition id="id92">
+			<source ref="id68"/>
+			<target ref="id65"/>
+			<label kind="guard" x="-20" y="125">intrusion_detected</label>
+			<label kind="assignment" x="-20" y="155">replay_active = false, attack_intensity[1] = 0</label>
+		</transition>
+		<transition id="id93">
+			<source ref="id69"/>
+			<target ref="id65"/>
+			<label kind="guard" x="130" y="50">intrusion_detected</label>
+			<label kind="assignment" x="130" y="80">dos_active = false, attack_intensity[2] = 0</label>
+		</transition>
+		<transition id="id94">
+			<source ref="id70"/>
+			<target ref="id65"/>
+			<label kind="guard" x="130" y="125">intrusion_detected &amp;&amp; (ai_alarm || operator_ack)</label>
+			<label kind="assignment" x="130" y="155">fdi_active = false, replay_active = false,
+    attack_intensity[0] = 0, attack_intensity[1] = 0</label>
+		</transition>
+		<transition id="id95">
+			<source ref="id73"/>
+			<target ref="id65"/>
+			<label kind="guard" x="-20" y="200">safe_mode || backup_shutdown</label>
+			<label kind="assignment" x="-20" y="230">fdi_active = false, replay_active = false, dos_active = false,
+    attack_intensity[0] = 0, attack_intensity[1] = 0, attack_intensity[2] = 0</label>
+		</transition>
+		<transition id="id96">
+			<source ref="id74"/>
+			<target ref="id65"/>
+			<label kind="guard" x="205" y="50">safe_mode &amp;&amp; recovery_time &gt; 0</label>
+			<label kind="assignment" x="205" y="80">fdi_active = false, replay_active = false, dos_active = false,
+    attack_intensity[0] = 0, attack_intensity[1] = 0, attack_intensity[2] = 0</label>
+		</transition>
+	</template>
+	<template>
+		<name>Operator</name>
+		<location id="id97" x="40" y="80">
+		</location>
+		<location id="id98" x="190" y="80">
+		</location>
+		<location id="id99" x="190" y="230">
+		</location>
+		<location id="id100" x="40" y="230">
+		</location>
+		<location id="id101" x="340" y="80">
+		</location>
+		<location id="id102" x="340" y="230">
+		</location>
+		<init ref="id97"/>
+		<transition id="id103">
+			<source ref="id97"/>
+			<target ref="id98"/>
+			<label kind="guard" x="55" y="50">ai_alarm</label>
+			<label kind="assignment" x="55" y="80">t_response = 0</label>
+		</transition>
+		<transition id="id104">
+			<source ref="id98"/>
+			<target ref="id99"/>
+			<label kind="guard" x="130" y="125">ai_alarm &amp;&amp; intrusion_detected</label>
+		</transition>
+		<transition id="id105">
+			<source ref="id98"/>
+			<target ref="id97"/>
+			<label kind="guard" x="55" y="50">!ai_alarm &amp;&amp; !intrusion_detected</label>
+		</transition>
+		<transition id="id106">
+			<source ref="id99"/>
+			<target ref="id100"/>
+			<label kind="guard" x="55" y="200">(twin_error[0] &amp;&amp; twin_error[1]) || (tank_level[0] == OVERFLOW)</label>
+		</transition>
+		<transition id="id107">
+			<source ref="id99"/>
+			<target ref="id101"/>
+			<label kind="guard" x="205" y="125">backup_shutdown || (tank_level[0] == OVERFLOW || tank_level[1] == OVERFLOW)</label>
+		</transition>
+		<transition id="id108">
+			<source ref="id100"/>
+			<target ref="id102"/>
+			<label kind="assignment" x="130" y="230">operator_ack = true</label>
+		</transition>
+		<transition id="id109">
+			<source ref="id100"/>
+			<target ref="id101"/>
+			<label kind="guard" x="130" y="125">twin_sync_count[0] == 0 &amp;&amp; twin_sync_count[1] == 0</label>
+		</transition>
+		<transition id="id110">
+			<source ref="id101"/>
+			<target ref="id102"/>
+			<label kind="assignment" x="280" y="155">operator_ack = true, backup_shutdown = true</label>
+		</transition>
+		<transition id="id111">
+			<source ref="id102"/>
+			<target ref="id102"/>
+			<label kind="guard" x="280" y="200">safe_mode &amp;&amp; operator_ack</label>
+			<nail x="310" y="200"/>
+			<nail x="370" y="200"/>
+		</transition>
+		<transition id="id112">
+			<source ref="id102"/>
+			<target ref="id97"/>
+			<label kind="guard" x="130" y="125">safe_mode</label>
+			<label kind="assignment" x="130" y="155">operator_ack = false</label>
+		</transition>
+	</template>
+	<template>
+		<name>SafeMode</name>
+		<location id="id113" x="40" y="80">
+		</location>
+		<location id="id114" x="190" y="80">
+		</location>
+		<location id="id115" x="190" y="230">
+		</location>
+		<location id="id116" x="40" y="230">
+		</location>
+		<location id="id117" x="340" y="80">
+			<label kind="invariant" x="330" y="95">recovery_time &lt;= MAX_RECOVERY_TIME</label>
+		</location>
+		<location id="id118" x="340" y="230">
+		</location>
+		<init ref="id113"/>
+		<transition id="id119">
+			<source ref="id113"/>
+			<target ref="id114"/>
+			<label kind="guard" x="55" y="50">intrusion_detected || operator_ack || backup_shutdown || tank_level[0] == OVERFLOW || tank_level[1] == OVERFLOW</label>
+			<label kind="assignment" x="55" y="80">safe_mode = true, recovery_time = 0, clean_count = 0</label>
+		</transition>
+		<transition id="id120">
+			<source ref="id114"/>
+			<target ref="id115"/>
+			<label kind="assignment" x="130" y="155">pump_state[0] = false, pump_state[1] = false</label>
+		</transition>
+		<transition id="id121">
+			<source ref="id115"/>
+			<target ref="id115"/>
+			<label kind="guard" x="130" y="200">intrusion_detected &amp;&amp; (fdi_active || replay_active || dos_active)</label>
+			<label kind="assignment" x="130" y="230">pump_state[0] = false, pump_state[1] = false</label>
+			<nail x="160" y="200"/>
+			<nail x="220" y="200"/>
+		</transition>
+		<transition id="id122">
+			<source ref="id115"/>
+			<target ref="id116"/>
+			<label kind="guard" x="55" y="200">intrusion_detected &amp;&amp;
+    !fdi_active &amp;&amp; !replay_active &amp;&amp; !dos_active &amp;&amp;
+    tank_level[0] &lt; OVERFLOW &amp;&amp; tank_level[1] &lt; OVERFLOW</label>
+			<label kind="assignment" x="55" y="230">recovery_time = 0, clean_count = 1</label>
+		</transition>
+		<transition id="id123">
+			<source ref="id116"/>
+			<target ref="id116"/>
+			<label kind="guard" x="-20" y="200">!fdi_active &amp;&amp; !replay_active &amp;&amp; !dos_active &amp;&amp; !intrusion_detected</label>
+			<label kind="assignment" x="-20" y="230">clean_count = (clean_count &lt; RECOVERY_THRESHOLD ? clean_count + 1 : RECOVERY_THRESHOLD)</label>
+			<nail x="10" y="200"/>
+			<nail x="70" y="200"/>
+		</transition>
+		<transition id="id124">
+			<source ref="id116"/>
+			<target ref="id117"/>
+			<label kind="guard" x="130" y="125">clean_count &gt;= (RECOVERY_THRESHOLD / 2) &amp;&amp;
+    !fdi_active &amp;&amp; !replay_active &amp;&amp; !dos_active</label>
+			<label kind="assignment" x="130" y="155">recovery_time = 0</label>
+		</transition>
+		<transition id="id125">
+			<source ref="id117"/>
+			<target ref="id117"/>
+			<label kind="guard" x="280" y="50">clean_count &lt; RECOVERY_THRESHOLD &amp;&amp;
+    recovery_time &lt; MAX_RECOVERY_TIME &amp;&amp;
+    !fdi_active &amp;&amp; !replay_active &amp;&amp; !dos_active</label>
+			<label kind="assignment" x="280" y="80">clean_count = (clean_count &lt; RECOVERY_THRESHOLD ? clean_count + 1 : RECOVERY_THRESHOLD)</label>
+			<nail x="310" y="50"/>
+			<nail x="370" y="50"/>
+		</transition>
+		<transition id="id126">
+			<source ref="id117"/>
+			<target ref="id118"/>
+			<label kind="guard" x="280" y="125">clean_count &gt;= RECOVERY_THRESHOLD &amp;&amp;
+    !fdi_active &amp;&amp; !replay_active &amp;&amp; !dos_active &amp;&amp;
+    !intrusion_detected &amp;&amp; !ai_alarm</label>
+		</transition>
+		<transition id="id127">
+			<source ref="id117"/>
+			<target ref="id113"/>
+			<label kind="guard" x="130" y="50">recovery_time &gt;= MAX_RECOVERY_TIME</label>
+			<label kind="assignment" x="130" y="80">safe_mode = false, clean_count = 0, recovery_time = 0</label>
+		</transition>
+		<transition id="id128">
+			<source ref="id118"/>
+			<target ref="id118"/>
+			<label kind="guard" x="280" y="200">clean_count &gt;= RECOVERY_THRESHOLD &amp;&amp;
+    !fdi_active &amp;&amp; !replay_active &amp;&amp; !dos_active &amp;&amp;
+    twin_sync_count[0] &gt;= 3 &amp;&amp; twin_sync_count[1] &gt;= 3</label>
+			<nail x="310" y="200"/>
+			<nail x="370" y="200"/>
+		</transition>
+		<transition id="id129">
+			<source ref="id118"/>
+			<target ref="id113"/>
+			<label kind="guard" x="130" y="125">!intrusion_detected &amp;&amp; !ai_alarm &amp;&amp;
+    !fdi_active &amp;&amp; !replay_active &amp;&amp; !dos_active &amp;&amp;
+    recovery_time &lt; MAX_RECOVERY_TIME</label>
+			<label kind="assignment" x="130" y="155">safe_mode = false, clean_count = 0, recovery_time = 0</label>
+		</transition>
+	</template>
+	<template>
+		<name>BackupControl</name>
+		<location id="id130" x="40" y="80">
+		</location>
+		<location id="id131" x="190" y="80">
+		</location>
+		<location id="id132" x="190" y="230">
+		</location>
+		<location id="id133" x="40" y="230">
+		</location>
+		<init ref="id130"/>
+		<transition id="id134">
+			<source ref="id130"/>
+			<target ref="id131"/>
+		</transition>
+		<transition id="id135">
+			<source ref="id131"/>
+			<target ref="id131"/>
+			<label kind="guard" x="130" y="50">tank_level[0] &lt; OVERFLOW &amp;&amp; tank_level[1] &lt; OVERFLOW</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id136">
+			<source ref="id131"/>
+			<target ref="id132"/>
+			<label kind="guard" x="130" y="125">(tank_level[0] == HIGH || tank_level[1] == HIGH) &amp;&amp;
+    !(tank_level[0] == OVERFLOW || tank_level[1] == OVERFLOW)</label>
+			<label kind="assignment" x="130" y="155">backup_shutdown = false</label>
+		</transition>
+		<transition id="id137">
+			<source ref="id131"/>
+			<target ref="id133"/>
+			<label kind="guard" x="55" y="125">tank_level[0] == OVERFLOW || tank_level[1] == OVERFLOW</label>
+			<label kind="assignment" x="55" y="155">backup_shutdown = true</label>
+		</transition>
+		<transition id="id138">
+			<source ref="id132"/>
+			<target ref="id132"/>
+			<label kind="guard" x="130" y="200">!(tank_level[0] == OVERFLOW || tank_level[1] == OVERFLOW)</label>
+			<nail x="160" y="200"/>
+			<nail x="220" y="200"/>
+		</transition>
+		<transition id="id139">
+			<source ref="id132"/>
+			<target ref="id133"/>
+			<label kind="guard" x="55" y="200">tank_level[0] == OVERFLOW || tank_level[1] == OVERFLOW</label>
+			<label kind="assignment" x="55" y="230">backup_shutdown = true</label>
+		</transition>
+		<transition id="id140">
+			<source ref="id132"/>
+			<target ref="id131"/>
+			<label kind="guard" x="130" y="125">tank_level[0] &lt; HIGH &amp;&amp; tank_level[1] &lt; HIGH</label>
+			<label kind="assignment" x="130" y="155">backup_shutdown = false</label>
+		</transition>
+		<transition id="id141">
+			<source ref="id133"/>
+			<target ref="id133"/>
+			<label kind="guard" x="-20" y="200">tank_level[0] == OVERFLOW || tank_level[1] == OVERFLOW</label>
+			<label kind="assignment" x="-20" y="230">backup_shutdown = true</label>
+			<nail x="10" y="200"/>
+			<nail x="70" y="200"/>
+		</transition>
+		<transition id="id142">
+			<source ref="id133"/>
+			<target ref="id132"/>
+			<label kind="guard" x="55" y="200">!(tank_level[0] == OVERFLOW || tank_level[1] == OVERFLOW) &amp;&amp;
+    (tank_level[0] == HIGH || tank_level[1] == HIGH)</label>
+			<label kind="assignment" x="55" y="230">backup_shutdown = false</label>
+		</transition>
+	</template>
+	<template>
+		<name>PLC</name>
+		<location id="id143" x="40" y="80">
+		</location>
+		<location id="id144" x="190" y="80">
+		</location>
+		<location id="id145" x="190" y="230">
+		</location>
+		<location id="id146" x="40" y="230">
+		</location>
+		<init ref="id143"/>
+		<transition id="id147">
+			<source ref="id143"/>
+			<target ref="id144"/>
+		</transition>
+		<transition id="id148">
+			<source ref="id144"/>
+			<target ref="id145"/>
+			<label kind="synchronisation" x="130" y="140">net_sensor?</label>
+			<label kind="assignment" x="130" y="155">pump_cmd_on[0]  = (secure_sensor_level[0] &lt; LOW  &amp;&amp; !safe_mode &amp;&amp; !backup_shutdown),
+    pump_cmd_on[1]  = (secure_sensor_level[1] &lt; LOW  &amp;&amp; !safe_mode &amp;&amp; !backup_shutdown),
+    pump_cmd_off[0] = (secure_sensor_level[0] &gt; HIGH || safe_mode || backup_shutdown),
+    pump_cmd_off[1] = (secure_sensor_level[1] &gt; HIGH || safe_mode || backup_shutdown)</label>
+		</transition>
+		<transition id="id149">
+			<source ref="id145"/>
+			<target ref="id146"/>
+			<label kind="assignment" x="55" y="230">pump_state[0] = (!safe_mode &amp;&amp; !backup_shutdown &amp;&amp; pump_cmd_on[0]) ? true : false,
+    pump_state[1] = (!safe_mode &amp;&amp; !backup_shutdown &amp;&amp; pump_cmd_on[1]) ? true : false</label>
+		</transition>
+		<transition id="id150">
+			<source ref="id146"/>
+			<target ref="id144"/>
+		</transition>
+	</template>
+	<template>
+		<name>Logger</name>
+		<location id="id151" x="40" y="80">
+		</location>
+		<location id="id152" x="190" y="80">
+		</location>
+		<location id="id153" x="190" y="230">
+		</location>
+		<init ref="id151"/>
+		<transition id="id154">
+			<source ref="id151"/>
+			<target ref="id152"/>
+		</transition>
+		<transition id="id155">
+			<source ref="id152"/>
+			<target ref="id152"/>
+			<label kind="synchronisation" x="130" y="65">log_event?</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id156">
+			<source ref="id152"/>
+			<target ref="id153"/>
+			<label kind="guard" x="130" y="125">intrusion_detected || ai_alarm || operator_ack || backup_shutdown || safe_mode</label>
+		</transition>
+		<transition id="id157">
+			<source ref="id153"/>
+			<target ref="id152"/>
+			<label kind="assignment" x="130" y="155">t_detect = 0</label>
+		</transition>
+	</template>
+	<template>
+		<name>Watchdog</name>
+		<location id="id158" x="40" y="80">
+		</location>
+		<location id="id159" x="190" y="80">
+		</location>
+		<location id="id160" x="190" y="230">
+		</location>
+		<init ref="id158"/>
+		<transition id="id161">
+			<source ref="id158"/>
+			<target ref="id159"/>
+			<label kind="assignment" x="55" y="80">heartbeat = 0</label>
+		</transition>
+		<transition id="id162">
+			<source ref="id159"/>
+			<target ref="id159"/>
+			<label kind="synchronisation" x="130" y="65">heartbeat_tick!</label>
+			<label kind="assignment" x="130" y="80">heartbeat = 0</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id163">
+			<source ref="id159"/>
+			<target ref="id159"/>
+			<label kind="guard" x="130" y="50">heartbeat &lt; 100</label>
+			<nail x="160" y="50"/>
+			<nail x="220" y="50"/>
+		</transition>
+		<transition id="id164">
+			<source ref="id159"/>
+			<target ref="id160"/>
+			<label kind="guard" x="130" y="125">heartbeat &gt;= 100</label>
+		</transition>
+		<transition id="id165">
+			<source ref="id160"/>
+			<target ref="id160"/>
+			<label kind="guard" x="130" y="200">heartbeat &gt;= 100</label>
+			<label kind="assignment" x="130" y="230">backup_shutdown = true</label>
+			<nail x="160" y="200"/>
+			<nail x="220" y="200"/>
+		</transition>
+		<transition id="id166">
+			<source ref="id160"/>
+			<target ref="id159"/>
+			<label kind="synchronisation" x="130" y="140">heartbeat_tick!</label>
+			<label kind="assignment" x="130" y="155">heartbeat = 0, backup_shutdown = false</label>
+		</transition>
+	</template>
+	<system>
+
+tank0    = Tank(0);
+tank1    = Tank(1);
+sensor0  = Sensor(0);
+sensor1  = Sensor(1);
+network  = Network();
+pipes    = PipeFlow();
+dt       = DigitalTwin();
+ids      = AI_IDS();
+operator = Operator();
+safe     = SafeMode();
+plc      = PLC();
+attacker = Attacker();
+backup   = BackupControl();
+logger   = Logger();
+watchdog = Watchdog();
+
+system tank0, tank1,
+       sensor0, sensor1,
+       network, pipes,
+       dt, ids,
+       operator, safe, plc,
+       attacker,
+       backup, logger, watchdog;
+
+</system>
+	<queries>
+		<query>
+			<formula>A[] not deadlock
+
+
+
+
+
+
+</formula>
+			<comment/>
+		</query>
+	</queries>
+</nta>
