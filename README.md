@@ -1,56 +1,63 @@
 # UPPAAL Models for Water Distribution Cyber–Physical Systems
 
-This repository contains seven supplied UPPAAL timed-automata models for a water distribution system (WDS), with extracted queries, a source audit, metamodel documentation and reproducibility guidance.
+This repository contains seven reference UPPAAL XML models for a water distribution system (WDS), their extracted query files, a machine-readable inherited-query inventory, modelling notes and reproducibility guidance.
 
-## Structure
+## Repository layout
 
-- `models/reference/`: seven original XML models, preserved unchanged.
-- `queries/inherited/`: query files extracted from each XML model.
-- `queries/catalogue.md`: query catalogue.
-- `results/inherited/query-inventory.json`: machine-readable inventory of formulas and embedded source annotations.
-- `results/reproduced/`: reserved for fresh verifier runs.
-- `metamodel/` and `semantics/`: assumption-aware modelling and timed-automata mapping.
-- `docs/`: source audit, scope/claims and reproducibility.
-- `scripts/`: XML validation and query/result extraction.
-
-## Models and query counts
-
-| Model | Queries |
-|---|---:|
-| `Baseline_CPS_WDS.xml` | 2 |
-| `CPS_WDS_Secuity_Framework.xml` | 7 |
-| `CPS_WDS_With_Attacks.xml` | 5 |
-| `CPS_WDS_With_Defence.xml` | 3 |
-| `CPS_WDS_Industry5_AI_Human_Timed_Verification.xml` | 5 |
-| `Advanced_CPS_WDS.xml` | 1 |
-| `CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml` | 30 |
-| **Total** | **53** |
-
-The spelling `Secuity` is retained in the source filename for traceability.
-
-## Validate and extract
-
-```bash
-python scripts/validate_models.py
-python scripts/extract_inherited_results.py
+```text
+.
+├── models/reference/       # Original supplied XML models; keep unchanged
+├── models/derived/         # Reviewed variants, with lineage notes
+├── queries/inherited/      # Formulae extracted from source XML
+├── queries/catalogue.md    # Query inventory and interpretation
+├── results/inherited/      # Historical XML annotations, not fresh runs
+├── results/reproduced/     # Fresh verifier records and raw output
+├── docs/                   # Model lineage, assumptions, scope, reproducibility
+├── metamodel/              # Assumption-aware WDS/CPS metamodel
+├── semantics/              # Assumption semantics and timed-automata mapping
+├── scripts/                # XML validation and inventory extraction
+├── tests/                  # Validation guidance
+└── experiments/configs/    # Experiment configuration guidance
 ```
 
-Run a model with the UPPAAL verifier (record the installed tool version):
+## Reference models and query counts
+
+| Model | Query count | Focus |
+|---|---:|---|
+| `Baseline_CPS_WDS.xml` | 2 | Tank, sensor, PLC and pump baseline |
+| `CPS_WDS_Secuity_Framework.xml` | 7 | Network and IDS security framework |
+| `CPS_WDS_With_Attacks.xml` | 5 | Attack-enabled model: FDI, replay and DoS behaviours |
+| `CPS_WDS_With_Defence.xml` | 3 | Defensive response and safe mode |
+| `CPS_WDS_Industry5_AI_Human_Timed_Verification.xml` | 5 | Timed AI/IDS and operator response |
+| `Advanced_CPS_WDS.xml` | 1 | Expanded monitoring, twin, watchdog and backup control |
+| `CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml` | 30 | Advanced timed multi-component model |
+| **Total** | **53** | |
+
+The original spelling `Secuity` in one filename is preserved for source traceability.
+
+## Quick start
+
+1. Install UPPAAL and record the exact version/build.
+2. Open a model under `models/reference/` in the UPPAAL GUI, or run the verifier.
+3. Use the corresponding `.q` file under `queries/inherited/`.
+4. Preserve the exact command, model/query SHA-256 hashes, tool version and raw output.
+
+Example command:
 
 ```bash
 verifyta -t 1 models/reference/Baseline_CPS_WDS.xml queries/inherited/Baseline_CPS_WDS.q
 ```
 
-This is an example command, not a claim of a fresh run.
+This is a reproducibility instruction, not evidence that the command has been run in this repository.
 
 ## Evidence interpretation
 
-The source XMLs contain 53 query formulas. Embedded historical annotations comprise 20 `success`, 6 `failure`, and 27 `NOT_RECORDED`. These are inherited XML annotations, not newly reproduced verifier results. Preserve fresh runs separately with the tool version, command, model/query SHA-256 hashes, exit status and raw output.
+The 53 formulae were extracted from the XML query blocks. The source XMLs contain 20 `success`, 6 `failure`, and 27 `NOT_RECORDED` historical result annotations. These annotations are retained as **inherited source metadata**, not current UPPAAL executions. Fresh runs belong in `results/reproduced/` and must include complete provenance.
 
-UPPAAL `E<>` denotes existential reachability, not inevitability. A reachable alarm does not prove complete attack detection, and a reachable recovery state does not prove guaranteed recovery. Failed properties and counterexamples must remain documented.
+UPPAAL `E<> p` expresses existential reachability; it is not an inevitability guarantee. A reachable alarm does not establish complete attack detection, and a reachable recovery state does not establish inevitable recovery. Failed properties and counterexamples must be preserved and discussed.
 
-See `docs/source-model-audit.md`, `docs/scope-and-claims.md` and `docs/reproducibility.md`.
+See `docs/source-model-audit.md`, `docs/query-and-property-guide.md` and `docs/reproducibility.md` before making claims based on the models.
 
 ## Licence
 
-No licence is asserted until ownership and reuse conditions for all model artefacts have been confirmed.
+No licence is asserted in this repository. Confirm ownership and reuse conditions for every supplied model and dependency before adding a licence.
