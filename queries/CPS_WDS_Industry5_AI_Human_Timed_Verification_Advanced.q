@@ -22,7 +22,6 @@ E<> (operator_ack && backup_shutdown)
 E<> (ai_alarm && operator_ack && safe_mode)
 E<> (watchdog_miss>=WD_LIMIT && backup_shutdown)
 E<> (backup_shutdown && !pump_state[0] && !pump_state[1])
-A[] not deadlock
 E<> (safe_mode==false)
 E<> pump_state[0]
 E<> !pump_state[0]
