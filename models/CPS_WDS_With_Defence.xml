@@ -146,7 +146,7 @@ const int Ts_min = 1, Ts_max = 5;
     <label kind="assignment">
       intrusion_detected = (secure_sensor_level != tank_level),
       alarm_integrity = (secure_sensor_level != tank_level),
-      clean_count = (secure_sensor_level == tank_level ? clean_count + 1 : 0)
+      clean_count = (secure_sensor_level == tank_level ? (clean_count < RECOVERY_THRESHOLD ? clean_count + 1 : RECOVERY_THRESHOLD) : 0)
     </label>
   </transition>
 </template>
