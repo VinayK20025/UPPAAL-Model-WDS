@@ -27,7 +27,7 @@ bool pump_cmd_off = false;
 bool intrusion_detected = false;
 bool ai_alarm = false;
 bool operator_ack = false;
-bool safe_mode = false;
+bool safe_mode = false;\nbool data_valid = true;
 
 /* Attack flags */
 bool fdi_active = false;
@@ -259,7 +259,7 @@ ai_alarm = false
 
 <transition>
 <source ref="p0"/><target ref="p0"/>
-<label kind="guard">secure_sensor_level &gt;= UPPER_THRESHOLD</label>
+<label kind="guard">secure_sensor_level &gt;= UPPER_THRESHOLD || safe_mode</label>
 <label kind="assignment">pump_cmd_on = false, pump_cmd_off = true</label>
 </transition>
 
