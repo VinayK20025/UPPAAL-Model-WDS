@@ -188,7 +188,7 @@ const int Ts_min = 1, Ts_max = 5;
   <transition>
     <source ref="p0"/><target ref="p0"/>
     <label kind="guard">
-      !safe_mode &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD
+      !safe_mode &amp;&amp; data_valid &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD
     </label>
     <label kind="assignment">
       pump_cmd_on = true,
