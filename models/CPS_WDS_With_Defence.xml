@@ -16,6 +16,7 @@ const int OVERFLOW = 4;
 int tank_level = NORMAL;
 int sensor_level = NORMAL;
 int secure_sensor_level = NORMAL;
+bool data_valid = true;
 
 /* Control */
 bool pump_state   = false;
