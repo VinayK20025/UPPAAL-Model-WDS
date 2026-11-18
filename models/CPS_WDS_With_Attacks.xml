@@ -85,7 +85,7 @@ const int Ts_min = 1, Ts_max = 5;
 		<transition id="id7">
 			<source ref="id2"/>
 			<target ref="id3"/>
-			<label kind="guard" x="55" y="200">pump_state &amp;&amp; !safe_mode</label>
+			<label kind="guard" x="55" y="200">pump_state</label>
 			<label kind="assignment" x="55" y="230">tank_level = OVERFLOW</label>
 		</transition>
 	</template>
