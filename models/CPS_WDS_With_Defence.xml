@@ -25,6 +25,8 @@ bool pump_cmd_off = false;
 
 /* Security */
 bool intrusion_detected = false;
+bool attack_detected_once = false;
+bool recovery_completed = false;
 bool safe_mode = false;
 bool alarm_integrity = false;
 bool alarm_dos = false;
@@ -144,37 +146,64 @@ const int Ts_min = 1, Ts_max = 5;
     <source ref="i0"/><target ref="i0"/>
     <label kind="synchronisation">net_deliver_sensor?</label>
     <label kind="assignment">
-      intrusion_detected = (secure_sensor_level != tank_level),
-      alarm_integrity = (secure_sensor_level != tank_level),
-      clean_count = (secure_sensor_level == tank_level ? (clean_count < RECOVERY_THRESHOLD ? clean_count + 1 : RECOVERY_THRESHOLD) : 0)
+      intrusion_detected = (secure_sensor_level != sensor_level),
+      alarm_integrity = (secure_sensor_level != sensor_level),
+      attack_detected_once =
+        attack_detected_once || (secure_sensor_level != sensor_level),
+      clean_count =
+        (secure_sensor_level == sensor_level &amp;&amp; !fdi_active
+          ? (clean_count &lt; RECOVERY_THRESHOLD
+              ? clean_count + 1
+              : RECOVERY_THRESHOLD)
+          : 0)
     </label>
   </transition>
 </template>
 
 <!-- ================= SAFE MODE ================= -->
+<!-- ================= SAFE MODE ================= -->
 <template>
   <name>SafeMode</name>
 
-  <location id="sm0"><name>NormalMode</name></location>
-  <location id="sm1"><name>SafeMode</name></location>
+  <location id="sm0">
+    <name>NormalMode</name>
+  </location>
+
+  <location id="sm1">
+    <name>SafeMode</name>
+  </location>
 
   <init ref="sm0"/>
 
-  <!-- Enter safe mode -->
+  <!-- Atomic protective shutdown -->
   <transition>
-    <source ref="sm0"/><target ref="sm1"/>
-    <label kind="guard">alarm_integrity || dos_active</label>
-    <label kind="assignment">safe_mode = true</label>
+    <source ref="sm0"/>
+    <target ref="sm1"/>
+    <label kind="guard">alarm_integrity || alarm_dos || dos_active</label>
+    <label kind="assignment">
+      safe_mode = true,
+      pump_state = false,
+      pump_cmd_on = false,
+      pump_cmd_off = false
+    </label>
   </transition>
 
-  <!-- Exit safe mode -->
+  <!-- Recovery after confirmed attack clearance -->
   <transition>
-    <source ref="sm1"/><target ref="sm0"/>
-    <label kind="guard">clean_count &gt;= RECOVERY_THRESHOLD</label>
+    <source ref="sm1"/>
+    <target ref="sm0"/>
+    <label kind="guard">
+      clean_count >= RECOVERY_THRESHOLD
+      &amp;&amp; !fdi_active
+      &amp;&amp; !dos_active
+    </label>
     <label kind="assignment">
       safe_mode = false,
       alarm_integrity = false,
-      dos_active = false
+      alarm_dos = false,
+      intrusion_detected = false,
+      clean_count = 0,
+      recovery_completed = true
     </label>
   </transition>
 </template>
@@ -189,7 +218,8 @@ const int Ts_min = 1, Ts_max = 5;
   <transition>
     <source ref="p0"/><target ref="p0"/>
     <label kind="guard">
-      !safe_mode &amp;&amp; data_valid &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD
+      !safe_mode &amp;&amp; !alarm_integrity &amp;&amp; !alarm_dos
+      &amp;&amp; data_valid &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD
     </label>
     <label kind="assignment">
       pump_cmd_on = true,
@@ -216,20 +246,9 @@ const int Ts_min = 1, Ts_max = 5;
   <location id="a0"/>
   <init ref="a0"/>
 
-  <!-- Safe mode override -->
   <transition>
     <source ref="a0"/><target ref="a0"/>
-    <label kind="guard">safe_mode</label>
-    <label kind="assignment">
-      pump_state = false,
-      pump_cmd_on = false,
-      pump_cmd_off = false
-    </label>
-  </transition>
-
-  <transition>
-    <source ref="a0"/><target ref="a0"/>
-    <label kind="guard">pump_cmd_on</label>
+    <label kind="guard">pump_cmd_on &amp;&amp; !safe_mode</label>
     <label kind="assignment">pump_state = true, pump_cmd_on = false</label>
   </transition>
 
@@ -243,15 +262,31 @@ const int Ts_min = 1, Ts_max = 5;
 <!-- ================= ATTACK ================= -->
 <template>
   <name>FDI_Attacker</name>
-  <location id="f0"/>
+
+  <location id="f0">
+    <name>Inactive</name>
+  </location>
+
+  <location id="f1">
+    <name>Active</name>
+  </location>
+
   <init ref="f0"/>
 
+  <!-- Launch FDI attack -->
   <transition>
-    <source ref="f0"/><target ref="f0"/>
+    <source ref="f0"/>
+    <target ref="f1"/>
     <label kind="assignment">fdi_active = true</label>
   </transition>
-</template>
 
+  <!-- Attacker terminates the attack -->
+  <transition>
+    <source ref="f1"/>
+    <target ref="f0"/>
+    <label kind="assignment">fdi_active = false</label>
+  </transition>
+</template>
 <!-- ================= SYSTEM ================= -->
 <system>
 tank = Tank();
