@@ -27,7 +27,8 @@ bool pump_cmd_off = false;
 bool intrusion_detected = false;
 bool ai_alarm = false;
 bool operator_ack = false;
-bool safe_mode = false;\nbool data_valid = true;
+bool safe_mode = false;
+bool data_valid = true;
 
 /* Attack flags */
 bool fdi_active = false;
@@ -91,7 +92,7 @@ const int Ts_min = 1, Ts_max = 5;
 
 <transition>
 <source ref="t2"/><target ref="t3"/>
-<label kind="guard">pump_state</label>
+<label kind="guard">pump_state &amp;&amp; !safe_mode</label>
 <label kind="assignment">tank_level = OVERFLOW</label>
 </transition>
 
@@ -253,7 +254,7 @@ ai_alarm = false
 
 <transition>
 <source ref="p0"/><target ref="p0"/>
-<label kind="guard">!safe_mode &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD</label>
+<label kind="guard">!safe_mode &amp;&amp; data_valid &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD</label>
 <label kind="assignment">pump_cmd_on = true, pump_cmd_off = false</label>
 </transition>
 
