@@ -107,7 +107,7 @@ const int Ts_min = 1, Ts_max = 5;
 			<target ref="id11"/>
 			<label kind="select" x="-20" y="35">v : int[DEPLETED, OVERFLOW]</label>
 			<label kind="synchronisation" x="-20" y="65">net_deliver_sensor!</label>
-			<label kind="assignment" x="-20" y="80">secure_sensor_level = v</label>
+			<label kind="assignment" x="-20" y="80">secure_sensor_level = sensor_level</label>
 			<nail x="10" y="50"/>
 			<nail x="70" y="50"/>
 		</transition>
