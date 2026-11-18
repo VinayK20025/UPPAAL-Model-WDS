@@ -8,7 +8,10 @@ const int NORMAL   = 2;
 const int HIGH     = 3;
 const int OVERFLOW = 4;
 
-/* Physical */
+/* Physical state and sampled measurements.
+ * sensor_level is the latest sampled tank value; it may legitimately lag
+ * tank_level between periodic sensor updates.
+ */
 int tank_level   = NORMAL;
 int sensor_level = NORMAL;
 int secure_sensor_level = NORMAL;
@@ -117,7 +120,7 @@ const int Ts_min = 1, Ts_max = 5;
 		<transition id="id12">
 			<source ref="id10"/>
 			<target ref="id10"/>
-			<label kind="guard" x="-20" y="50">!dos_active</label>
+			<label kind="guard" x="-20" y="50">!dos_active &amp;&amp; !fdi_active &amp;&amp; !replay_active</label>
 			<label kind="synchronisation" x="-20" y="65">net_deliver_sensor!</label>
 			<label kind="assignment" x="-20" y="80">secure_sensor_level = sensor_level</label>
 			<nail x="10" y="50"/>
@@ -161,8 +164,11 @@ const int Ts_min = 1, Ts_max = 5;
 			<source ref="id17"/>
 			<target ref="id17"/>
 			<label kind="synchronisation" x="-20" y="65">net_deliver_sensor?</label>
-			<label kind="assignment" x="-20" y="80">intrusion_detected = (secure_sensor_level != tank_level),
-      data_valid = (secure_sensor_level == tank_level)</label>
+			<!-- Compare the delivered value with the sampled source value.
+			     Comparing with tank_level would incorrectly classify ordinary
+			     inter-sample physical changes as communication tampering. -->
+			<label kind="assignment" x="-20" y="80">intrusion_detected = (secure_sensor_level != sensor_level),
+      data_valid = (secure_sensor_level == sensor_level)</label>
 			<nail x="10" y="50"/>
 			<nail x="70" y="50"/>
 		</transition>
@@ -306,7 +312,7 @@ system tank, sensor, network, ids, plc, pump, fdi, replay, dos;
 		</query>
 		<query>
 			<formula>A[] sensor_level == tank_level</formula>
-			<comment/>
+			<comment>Diagnostic invariant: expected to be false because periodic sampling permits sensor_level to lag tank_level between samples.</comment>
 			<result outcome="failure" type="quality" timestamp="2026-03-31 23:56:20 +0530">
 			</result>
 		</query>
