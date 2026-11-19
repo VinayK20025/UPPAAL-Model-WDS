@@ -2,7 +2,7 @@
 
 ## Query file organisation
 
-The top-level repository stores model XML files under `models/` and executable query files under `queries/`, using matching basenames. Run them with `scripts/run_verification.py` to preserve exit codes and evidence metadata.
+The repository stores model XML files under `models/` and executable query files under `queries/`, using matching basenames. The four designated stage models are baseline, defence, timed AI/Human, and advanced timed AI/Human. Run matching query files with `scripts/run_verification.py` to preserve exit codes and evidence metadata.
 
 Diagnostic formulas that cannot currently be evaluated by the selected verifier/model combination are kept under `queries/diagnostic/`. They must not be silently counted as verified.
 
@@ -22,14 +22,15 @@ The supplied UPPAAL 5.0.0 verifier returned this error for the advanced timed mo
 
 ## Source-specific cautions
 
-1. A reachable attack or overflow state is a witness in the encoded model, not a physical WDS prediction.
-2. A reachable alarm does not establish complete attack-detection coverage.
-3. A reachable recovery state does not establish inevitable recovery.
-4. An implication invariant may be vacuous when its antecedent is unreachable; check antecedent reachability separately.
-5. Failed properties and counterexamples must be retained and analysed.
-6. Embedded XML outcome annotations are inherited metadata, not fresh verifier runs.
-7. A verifier execution error, absent result line or incomplete log is not a property result.
-8. Do not change a failing formula simply to obtain a satisfied result; first inspect its counterexample and determine whether the model, assumption or requirement is incorrect.
+1. The timed AI/Human model has five embedded Q1–Q5 formulas; the diagnostic D1–D3 formulas are in `queries/CPS_WDS_Industry5_AI_Human_Timed_Verification_Diagnostic.q` and are not embedded in its XML.
+2. A reachable attack or overflow state is a witness in the encoded model, not a physical WDS prediction.
+3. A reachable alarm does not establish complete attack-detection coverage.
+4. A reachable recovery state does not establish inevitable recovery.
+5. An implication invariant may be vacuous when its antecedent is unreachable; check antecedent reachability separately.
+6. Failed properties and counterexamples must be retained and analysed.
+7. Embedded XML outcome annotations are inherited metadata, not fresh verifier runs.
+8. A verifier execution error, absent result line or incomplete log is not a property result.
+9. Do not change a failing formula simply to obtain a satisfied result; first inspect its counterexample and determine whether the model, assumption or requirement is incorrect.
 
 ## Interpretation of observed property violations
 
