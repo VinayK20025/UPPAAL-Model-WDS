@@ -20,3 +20,17 @@ Do not use the nested scripts or README as instructions for the top-level workin
 ## Implementation status
 
 The repository includes XML validation and formula/annotation extraction scripts. It does not currently establish fresh verifier execution, automated metamodel validation, or an executable model transformation pipeline.
+
+
+## Main-branch designated model stages
+
+The four model-stage files retained at the repository root under `models/` are:
+
+1. `Baseline_CPS_WDS.xml` — baseline physical/control loop.
+2. `CPS_WDS_With_Defence.xml` — defensive response and safe-mode behaviour.
+3. `CPS_WDS_Industry5_AI_Human_Timed_Verification.xml` — AI/IDS, human acknowledgement, timed response and latched interlock/recovery semantics.
+4. `CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml` — expanded multi-tank, digital-twin, multi-attack and watchdog/backup-control composition.
+
+Other XML models remain in the repository for source lineage and comparative traceability. The four designated stage files are not interchangeable: in particular, the advanced model is a separate extended composition and must not be replaced by a copy of the 11-template timed AI/Human model.
+
+The timed AI/Human model embeds five Q1–Q5 queries. Its D1–D3 diagnostic properties remain in the separate file `queries/CPS_WDS_Industry5_AI_Human_Timed_Verification_Diagnostic.q`. Historical XML result annotations are not fresh verification evidence.
