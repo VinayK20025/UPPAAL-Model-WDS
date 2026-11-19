@@ -6,6 +6,7 @@ Run commands from the repository root.
 
 - Models: `models/<model-name>.xml`
 - Executable query sets: `queries/<model-name>.q`
+- Timed AI/Human diagnostics: `queries/CPS_WDS_Industry5_AI_Human_Timed_Verification_Diagnostic.q`
 - Diagnostic queries that are not supported by the current verifier/model combination: `queries/diagnostic/`
 - Verification runner: `scripts/run_verification.py`
 - Fresh evidence: `results/reproduced/`
