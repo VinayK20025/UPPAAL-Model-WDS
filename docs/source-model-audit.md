@@ -35,7 +35,7 @@ Historical result counts previously extracted from the source XML annotations we
 - A failed invariant is evidence of a counterexample in the model, not automatically evidence about an operational WDS.
 - Alarm reachability is not a proof of complete detection coverage.
 - Recovery reachability is not proof that recovery is inevitable.
-- The advanced timed model's inherited failed `ai_alarm --> operator_ack` query must not be described as guaranteed acknowledgement.
+- The advanced timed model's inherited failed `ai_alarm --> operator_ack` query must not be described as guaranteed acknowledgement. The AI/Human timed model's `E<> tank.Overflow` query is only an overflow reachability witness; the separate diagnostic D1 property addresses overflow during interlock.
 - Historical annotations are not fresh verifier records.
 
 ## Required future audit
