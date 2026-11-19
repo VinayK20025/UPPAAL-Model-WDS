@@ -29,6 +29,6 @@ The spelling `Secuity` is retained in the filename exactly as present in the sup
 
 ## Guidance for future derived models
 
-The present top-level repository stores the supplied XML files in `models/`; it does not currently provide a top-level `models/reference/` or `models/derived/` directory. Keep supplied inputs unchanged. When introducing derived variants, create a clearly separated location and document each variant's parent model, changed constructs, rationale and verification status.
+The repository has four designated model-stage files on `main`: `Baseline_CPS_WDS.xml`, `CPS_WDS_With_Defence.xml`, `CPS_WDS_Industry5_AI_Human_Timed_Verification.xml` and `CPS_WDS_Industry5_AI_Human_Timed_Verification_Advanced.xml`. Keep these paths stable. Treat the advanced model as an independent expanded composition, not as a simple copy of the 11-template timed AI/Human model. Document any future derivation as a separately named variant with parent, changed constructs, rationale and verification status.
 
 Keep physical state, sensed value, delivered value, controller command, actuator state, attack state, alarm state and recovery state separate. Model component failures separately from relationship failures.
