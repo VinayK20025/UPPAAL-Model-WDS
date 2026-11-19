@@ -1,0 +1,1 @@
+# Result review\n\n- Model revision and SHA-256:\n- Query file and SHA-256:\n- UPPAAL version/build:\n- OS/runtime:\n- Exact command:\n- Expected formula count:\n- Explicit outcomes:\n- Execution status:\n- Counterexample trace and analysis:\n- Assumptions/vacuity checks:\n- Limitations and reviewer conclusion:\n
