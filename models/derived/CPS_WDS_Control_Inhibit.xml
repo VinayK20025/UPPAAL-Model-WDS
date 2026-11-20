@@ -44,6 +44,13 @@ bool fdi_active = false;
 // Records whether an FDI episode has occurred
 bool attack_occurred = false;
 
+// Consecutive clean-measurement recovery qualification.
+const int RECOVERY_THRESHOLD = 3;
+int clean_count = 0;
+bool recovery_completed = false;
+bool recovery_sample_clean = false;
+chan ids_sample;
+
 // Latched defensive control inhibition
 bool control_inhibit = false;
 </declaration>
