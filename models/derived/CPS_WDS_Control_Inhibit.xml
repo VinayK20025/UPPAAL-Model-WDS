@@ -325,8 +325,9 @@ network = Network();
 ids = IDS();
 plc = PLC();
 pump = Pump();
+recovery_monitor = RecoveryMonitor();
 
-system tank, sensor, network, ids, plc, pump, fdi_attacker;
+system tank, sensor, network, ids, plc, pump, fdi_attacker, recovery_monitor;
 </system>
     <queries>
         <query>
