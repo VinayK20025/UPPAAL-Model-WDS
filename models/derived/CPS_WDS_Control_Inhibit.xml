@@ -372,5 +372,17 @@ system tank, sensor, network, ids, plc, pump, fdi_attacker, recovery_monitor;
             <result outcome="success" type="quality" timestamp="2026-03-31 23:55:01 +0530">
 			</result>
         </query>
+        <query>
+            <formula>E&lt;&gt; (attack_occurred &amp;&amp; recovery_completed &amp;&amp; clean_count == RECOVERY_THRESHOLD &amp;&amp; !control_inhibit)</formula>
+            <comment>Recovery qualification: three clean samples can clear inhibition</comment>
+        </query>
+        <query>
+            <formula>A[] (recovery_completed imply clean_count == RECOVERY_THRESHOLD)</formula>
+            <comment>Recovery qualification: completion requires the configured threshold</comment>
+        </query>
+        <query>
+            <formula>A[] (control_inhibit imply !pump_state &amp;&amp; !pump_cmd_on)</formula>
+            <comment>Defensive interlock remains effective during recovery qualification</comment>
+        </query>
     </queries>
 </nta>
