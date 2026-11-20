@@ -182,6 +182,66 @@ pump_cmd_off =
         </transition>
     </template>
     <template>
+        <name>RecoveryMonitor</name>
+        <location id="recovery_wait0" x="80" y="160"><name x="80" y="135">Wait0</name></location>
+        <location id="recovery_wait1" x="240" y="160"><name x="240" y="135">Wait1</name></location>
+        <location id="recovery_wait2" x="400" y="160"><name x="400" y="135">Wait2</name></location>
+        <location id="recovery_recovered" x="560" y="160"><name x="560" y="135">Recovered</name></location>
+        <init ref="recovery_wait0"/>
+        <transition id="recovery_count_1">
+            <source ref="recovery_wait0"/><target ref="recovery_wait1"/>
+            <label kind="guard" x="120" y="210">recovery_sample_clean &amp;&amp; control_inhibit</label>
+            <label kind="synchronisation" x="120" y="230">ids_sample?</label>
+            <label kind="assignment" x="120" y="250">clean_count = 1, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_count_2">
+            <source ref="recovery_wait1"/><target ref="recovery_wait2"/>
+            <label kind="guard" x="280" y="210">recovery_sample_clean &amp;&amp; control_inhibit</label>
+            <label kind="synchronisation" x="280" y="230">ids_sample?</label>
+            <label kind="assignment" x="280" y="250">clean_count = 2, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_complete">
+            <source ref="recovery_wait2"/><target ref="recovery_recovered"/>
+            <label kind="guard" x="440" y="210">recovery_sample_clean &amp;&amp; control_inhibit</label>
+            <label kind="synchronisation" x="440" y="230">ids_sample?</label>
+            <label kind="assignment" x="440" y="250">clean_count = RECOVERY_THRESHOLD, recovery_completed = true, control_inhibit = false</label>
+        </transition>
+        <transition id="recovery_reset_0">
+            <source ref="recovery_wait0"/><target ref="recovery_wait0"/>
+            <label kind="guard" x="100" y="330">!recovery_sample_clean</label>
+            <label kind="synchronisation" x="100" y="350">ids_sample?</label>
+            <label kind="assignment" x="100" y="370">clean_count = 0, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_reset_1">
+            <source ref="recovery_wait1"/><target ref="recovery_wait0"/>
+            <label kind="guard" x="100" y="330">!recovery_sample_clean</label>
+            <label kind="synchronisation" x="100" y="350">ids_sample?</label>
+            <label kind="assignment" x="100" y="370">clean_count = 0, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_reset_2">
+            <source ref="recovery_wait2"/><target ref="recovery_wait0"/>
+            <label kind="guard" x="100" y="330">!recovery_sample_clean</label>
+            <label kind="synchronisation" x="100" y="350">ids_sample?</label>
+            <label kind="assignment" x="100" y="370">clean_count = 0, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_reset_after">
+            <source ref="recovery_recovered"/><target ref="recovery_wait0"/>
+            <label kind="guard" x="100" y="330">!recovery_sample_clean</label>
+            <label kind="synchronisation" x="100" y="350">ids_sample?</label>
+            <label kind="assignment" x="100" y="370">clean_count = 0, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_hold">
+            <source ref="recovery_recovered"/><target ref="recovery_recovered"/>
+            <label kind="synchronisation" x="560" y="270">ids_sample?</label>
+        </transition>
+        <transition id="recovery_wait_clean_without_inhibit">
+            <source ref="recovery_wait0"/><target ref="recovery_wait0"/>
+            <label kind="guard" x="80" y="250">recovery_sample_clean &amp;&amp; !control_inhibit</label>
+            <label kind="synchronisation" x="80" y="270">ids_sample?</label>
+            <label kind="assignment" x="80" y="290">clean_count = 0</label>
+        </transition>
+    </template>
+    <template>
         <name>PLC</name>
         <location id="id15" x="40" y="80">
 		</location>
