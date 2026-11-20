@@ -44,6 +44,13 @@ bool fdi_active = false;
 // Records whether an FDI episode has occurred
 bool attack_occurred = false;
 
+// Consecutive clean-measurement recovery qualification.
+const int RECOVERY_THRESHOLD = 3;
+int clean_count = 0;
+bool recovery_completed = false;
+bool recovery_sample_clean = false;
+chan ids_sample;
+
 // Latched defensive control inhibition
 bool control_inhibit = false;
 </declaration>
@@ -141,16 +148,18 @@ data_valid = false</label>
     </template>
     <template>
         <name>IDS</name>
-        <location id="id13" x="40" y="80">
-		</location>
-        <init ref="id13" />
+        <location id="id13" x="40" y="80"/>
+        <location id="recovery_notify_location" x="260" y="80"/>
+        <init ref="id13"/>
         <transition id="id14">
-            <source ref="id13" />
-            <target ref="id13" />
+            <source ref="id13"/>
+            <target ref="recovery_notify_location"/>
             <label kind="synchronisation" x="-20" y="65">net_deliver_sensor?</label>
             <label kind="assignment" x="-20" y="80">intrusion_detected =
     measurement_fresh &amp;&amp; (secure_sensor_level != tank_level),
 data_valid =
+    measurement_fresh &amp;&amp; (secure_sensor_level == tank_level) &amp;&amp; !fdi_active,
+recovery_sample_clean =
     measurement_fresh &amp;&amp; (secure_sensor_level == tank_level) &amp;&amp; !fdi_active,
 control_inhibit =
     (measurement_fresh &amp;&amp; (secure_sensor_level != tank_level)) ||
@@ -165,8 +174,71 @@ pump_cmd_on =
 pump_cmd_off =
     (measurement_fresh &amp;&amp; (secure_sensor_level != tank_level))
     ? false : pump_cmd_off</label>
-            <nail x="10" y="50" />
-            <nail x="70" y="50" />
+        </transition>
+        <transition id="ids_recovery_notify">
+            <source ref="recovery_notify_location"/>
+            <target ref="id13"/>
+            <label kind="synchronisation" x="170" y="120">ids_sample!</label>
+        </transition>
+    </template>
+    <template>
+        <name>RecoveryMonitor</name>
+        <location id="recovery_wait0" x="80" y="160"><name x="80" y="135">Wait0</name></location>
+        <location id="recovery_wait1" x="240" y="160"><name x="240" y="135">Wait1</name></location>
+        <location id="recovery_wait2" x="400" y="160"><name x="400" y="135">Wait2</name></location>
+        <location id="recovery_recovered" x="560" y="160"><name x="560" y="135">Recovered</name></location>
+        <init ref="recovery_wait0"/>
+        <transition id="recovery_count_1">
+            <source ref="recovery_wait0"/><target ref="recovery_wait1"/>
+            <label kind="guard" x="120" y="210">recovery_sample_clean &amp;&amp; control_inhibit</label>
+            <label kind="synchronisation" x="120" y="230">ids_sample?</label>
+            <label kind="assignment" x="120" y="250">clean_count = 1, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_count_2">
+            <source ref="recovery_wait1"/><target ref="recovery_wait2"/>
+            <label kind="guard" x="280" y="210">recovery_sample_clean &amp;&amp; control_inhibit</label>
+            <label kind="synchronisation" x="280" y="230">ids_sample?</label>
+            <label kind="assignment" x="280" y="250">clean_count = 2, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_complete">
+            <source ref="recovery_wait2"/><target ref="recovery_recovered"/>
+            <label kind="guard" x="440" y="210">recovery_sample_clean &amp;&amp; control_inhibit</label>
+            <label kind="synchronisation" x="440" y="230">ids_sample?</label>
+            <label kind="assignment" x="440" y="250">clean_count = RECOVERY_THRESHOLD, recovery_completed = true, control_inhibit = false</label>
+        </transition>
+        <transition id="recovery_reset_0">
+            <source ref="recovery_wait0"/><target ref="recovery_wait0"/>
+            <label kind="guard" x="100" y="330">!recovery_sample_clean</label>
+            <label kind="synchronisation" x="100" y="350">ids_sample?</label>
+            <label kind="assignment" x="100" y="370">clean_count = 0, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_reset_1">
+            <source ref="recovery_wait1"/><target ref="recovery_wait0"/>
+            <label kind="guard" x="100" y="330">!recovery_sample_clean</label>
+            <label kind="synchronisation" x="100" y="350">ids_sample?</label>
+            <label kind="assignment" x="100" y="370">clean_count = 0, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_reset_2">
+            <source ref="recovery_wait2"/><target ref="recovery_wait0"/>
+            <label kind="guard" x="100" y="330">!recovery_sample_clean</label>
+            <label kind="synchronisation" x="100" y="350">ids_sample?</label>
+            <label kind="assignment" x="100" y="370">clean_count = 0, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_reset_after">
+            <source ref="recovery_recovered"/><target ref="recovery_wait0"/>
+            <label kind="guard" x="100" y="330">!recovery_sample_clean</label>
+            <label kind="synchronisation" x="100" y="350">ids_sample?</label>
+            <label kind="assignment" x="100" y="370">clean_count = 0, recovery_completed = false</label>
+        </transition>
+        <transition id="recovery_hold">
+            <source ref="recovery_recovered"/><target ref="recovery_recovered"/>
+            <label kind="synchronisation" x="560" y="270">ids_sample?</label>
+        </transition>
+        <transition id="recovery_wait_clean_without_inhibit">
+            <source ref="recovery_wait0"/><target ref="recovery_wait0"/>
+            <label kind="guard" x="80" y="250">recovery_sample_clean &amp;&amp; !control_inhibit</label>
+            <label kind="synchronisation" x="80" y="270">ids_sample?</label>
+            <label kind="assignment" x="80" y="290">clean_count = 0</label>
         </transition>
     </template>
     <template>
@@ -253,8 +325,9 @@ network = Network();
 ids = IDS();
 plc = PLC();
 pump = Pump();
+recovery_monitor = RecoveryMonitor();
 
-system tank, sensor, network, ids, plc, pump, fdi_attacker;
+system tank, sensor, network, ids, plc, pump, fdi_attacker, recovery_monitor;
 </system>
     <queries>
         <query>
@@ -298,6 +371,18 @@ system tank, sensor, network, ids, plc, pump, fdi_attacker;
             <comment>Intrusion detection is reachable</comment>
             <result outcome="success" type="quality" timestamp="2026-03-31 23:55:01 +0530">
 			</result>
+        </query>
+        <query>
+            <formula>E&lt;&gt; (attack_occurred &amp;&amp; recovery_completed &amp;&amp; clean_count == RECOVERY_THRESHOLD &amp;&amp; !control_inhibit)</formula>
+            <comment>Recovery qualification: three clean samples can clear inhibition</comment>
+        </query>
+        <query>
+            <formula>A[] (recovery_completed imply clean_count == RECOVERY_THRESHOLD)</formula>
+            <comment>Recovery qualification: completion requires the configured threshold</comment>
+        </query>
+        <query>
+            <formula>A[] (control_inhibit imply !pump_state &amp;&amp; !pump_cmd_on)</formula>
+            <comment>Defensive interlock remains effective during recovery qualification</comment>
         </query>
     </queries>
 </nta>
