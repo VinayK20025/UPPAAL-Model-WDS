@@ -1,0 +1,455 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC "-//Uppaal Team//DTD Flat System 1.1//EN" "http://www.it.uu.se/research/group/darts/uppaal/flat-1_2.dtd">
+<nta>
+  <declaration>
+    const int DEPLETED=0, LOW=1, NORMAL=2, HIGH=3, OVERFLOW=4;
+    const int RISK_LOW=0, RISK_MEDIUM=1, RISK_HIGH=2;
+    const int AI_THRESHOLD=2, HUMAN_REVIEW_LIMIT=4, RECOVERY_CLEAN_REQUIRED=2;
+    const int SAMPLE_MIN=1, SAMPLE_MAX=5, IOT_DELAY_MAX=2, AI_ANALYSIS_MAX=2;
+    int tank_level=NORMAL, sensor_level=NORMAL, trusted_sensor_level=NORMAL, plc_reading=NORMAL;
+    bool pump_state=false, pump_cmd_on=false, pump_cmd_off=false;
+    bool attack_active=false, attack_success=false, intrusion_detected=false;
+    bool data_valid=true, defence_enabled=true, system_degraded=false;
+    bool response_active=false, recovery_active=false, recovery_complete=false;
+    bool iot_connected=true, iot_packet_valid=true, iot_sensor_fault=false;
+    bool ai_alert=false, ai_recommendation_ready=false, ai_recommend_pump_off=false;
+    bool human_alert_received=false, human_acknowledged=false, human_approved=false;
+    bool human_rejected=false, human_override=false, safe_mode=false;
+    int ai_risk=RISK_LOW, ai_anomaly_score=0, clean_samples=0;
+    chan sensor_to_iot, iot_to_ai, ai_to_human, human_to_response, recovery_tick;</declaration>
+  <template>
+    <name>Tank</name>
+    <parameter />
+    <declaration />
+    <location id="tn" x="0" y="0">
+      <name>Normal</name>
+    </location>
+    <location id="tl" x="180" y="0">
+      <name>Low</name>
+    </location>
+    <location id="th" x="180" y="140">
+      <name>High</name>
+    </location>
+    <location id="to" x="0" y="140">
+      <name>Overflow</name>
+    </location>
+    <location id="td" x="360" y="0">
+      <name>Depleted</name>
+    </location>
+    <init ref="tn" />
+    <transition>
+      <source ref="tn" />
+      <target ref="tl" />
+      <label kind="guard">!pump_state &amp;&amp; !safe_mode</label>
+      <label kind="assignment">tank_level=LOW</label>
+    </transition>
+    <transition>
+      <source ref="tl" />
+      <target ref="tn" />
+      <label kind="guard">pump_state &amp;&amp; !safe_mode</label>
+      <label kind="assignment">tank_level=NORMAL</label>
+    </transition>
+    <transition>
+      <source ref="tn" />
+      <target ref="th" />
+      <label kind="guard">pump_state &amp;&amp; !safe_mode</label>
+      <label kind="assignment">tank_level=HIGH</label>
+    </transition>
+    <transition>
+      <source ref="th" />
+      <target ref="tn" />
+      <label kind="guard">!pump_state</label>
+      <label kind="assignment">tank_level=NORMAL</label>
+    </transition>
+  </template>
+  <template>
+    <name>IoT_Sensor</name>
+    <parameter />
+    <declaration>clock xs;</declaration>
+    <location id="is" x="0" y="0">
+      <name>Sampling</name>
+      <label kind="invariant">xs&lt;=SAMPLE_MAX</label>
+    </location>
+    <location id="iff" x="180" y="0">
+      <name>SensorFault</name>
+    </location>
+    <init ref="is" />
+    <transition>
+      <source ref="is" />
+      <target ref="is" />
+      <label kind="guard">xs&gt;=SAMPLE_MIN</label>
+      <label kind="synchronisation">sensor_to_iot!</label>
+      <label kind="assignment">sensor_level=tank_level, xs=0</label>
+    </transition>
+    <transition>
+      <source ref="is" />
+      <target ref="iff" />
+      <label kind="guard">iot_sensor_fault</label>
+      <label kind="assignment">data_valid=false</label>
+    </transition>
+    <transition>
+      <source ref="iff" />
+      <target ref="is" />
+      <label kind="guard">!iot_sensor_fault</label>
+      <label kind="assignment">data_valid=true, xs=0</label>
+    </transition>
+    <transition>
+      <source ref="is" />
+      <target ref="is" />
+      <label kind="guard">xs&gt;=SAMPLE_MIN &amp;&amp; !attack_active &amp;&amp; !intrusion_detected &amp;&amp; data_valid</label>
+      <label kind="synchronisation">recovery_tick!</label>
+    </transition>
+  </template>
+  <template>
+    <name>IoT_Network</name>
+    <parameter />
+    <declaration>clock xn;</declaration>
+    <location id="ic" x="0" y="0">
+      <name>Connected</name>
+    </location>
+    <location id="id" x="180" y="0">
+      <name>Disconnected</name>
+    </location>
+    <init ref="ic" />
+    <transition>
+      <source ref="ic" />
+      <target ref="id" />
+      <label kind="guard">!iot_connected</label>
+      <label kind="assignment">data_valid=false</label>
+    </transition>
+    <transition>
+      <source ref="id" />
+      <target ref="ic" />
+      <label kind="guard">iot_connected</label>
+      <label kind="assignment">data_valid=true, xn=0</label>
+    </transition>
+  </template>
+  <template>
+    <name>AI_Analytics</name>
+    <parameter />
+    <declaration>clock xa;</declaration>
+    <location id="am" x="0" y="0">
+      <name>Monitoring</name>
+    </location>
+    <location id="ac" x="180" y="0">
+      <name>Classifying</name>
+      <label kind="invariant">xa&lt;=AI_ANALYSIS_MAX</label>
+    </location>
+    <location id="aa" x="360" y="0">
+      <name>AlertReady</name>
+    </location>
+    <init ref="am" />
+    <transition>
+      <source ref="am" />
+      <target ref="ac" />
+      <label kind="guard">iot_connected &amp;&amp; data_valid</label>
+      <label kind="synchronisation">iot_to_ai?</label>
+      <label kind="assignment">xa=0, ai_anomaly_score=((trusted_sensor_level!=tank_level || attack_active) ? 3 : 0)</label>
+    </transition>
+    <transition>
+      <source ref="ac" />
+      <target ref="aa" />
+      <label kind="guard">xa&lt;=AI_ANALYSIS_MAX</label>
+      <label kind="assignment">ai_risk=(ai_anomaly_score&gt;=AI_THRESHOLD ? RISK_HIGH : RISK_LOW), ai_alert=(ai_anomaly_score&gt;=AI_THRESHOLD), ai_recommendation_ready=true, ai_recommend_pump_off=(ai_anomaly_score&gt;=AI_THRESHOLD)</label>
+    </transition>
+    <transition>
+      <source ref="aa" />
+      <target ref="am" />
+      <label kind="synchronisation">ai_to_human!</label>
+      <label kind="assignment">xa=0</label>
+    </transition>
+  </template>
+  <template>
+    <name>IoT_Forwarder</name>
+    <parameter />
+    <declaration />
+    <location id="fw" x="0" y="0">
+      <name>AwaitingSample</name>
+    </location>
+    <location id="fb" x="180" y="0">
+      <name>BufferedSample</name>
+    </location>
+    <init ref="fw" />
+    <transition>
+      <source ref="fw" />
+      <target ref="fb" />
+      <label kind="guard">iot_connected &amp;&amp; data_valid</label>
+      <label kind="synchronisation">sensor_to_iot?</label>
+      <label kind="assignment">trusted_sensor_level=sensor_level, iot_packet_valid=true</label>
+    </transition>
+    <transition>
+      <source ref="fb" />
+      <target ref="fw" />
+      <label kind="guard">iot_connected &amp;&amp; data_valid</label>
+      <label kind="synchronisation">iot_to_ai!</label>
+    </transition>
+  </template>
+  <template>
+    <name>Defence_IDS</name>
+    <parameter />
+    <declaration />
+    <location id="dm" x="0" y="0">
+      <name>Monitor</name>
+    </location>
+    <location id="dd" x="180" y="0">
+      <name>Detected</name>
+    </location>
+    <location id="df" x="360" y="0">
+      <name>Filter</name>
+    </location>
+    <init ref="dm" />
+    <transition>
+      <source ref="dm" />
+      <target ref="dd" />
+      <label kind="guard">defence_enabled &amp;&amp; (trusted_sensor_level!=tank_level || !iot_packet_valid || attack_active)</label>
+      <label kind="assignment">intrusion_detected=true, system_degraded=true, data_valid=false</label>
+    </transition>
+    <transition>
+      <source ref="dd" />
+      <target ref="df" />
+      <label kind="assignment">trusted_sensor_level=tank_level, data_valid=true</label>
+    </transition>
+    <transition>
+      <source ref="df" />
+      <target ref="dm" />
+      <label kind="guard">response_active</label>
+      <label kind="assignment">intrusion_detected=false, iot_packet_valid=true</label>
+    </transition>
+  </template>
+  <template>
+    <name>Human_Operator</name>
+    <parameter />
+    <declaration>clock xh;</declaration>
+    <location id="hw" x="0" y="0">
+      <name>AwaitingAlert</name>
+    </location>
+    <location id="ha" x="180" y="0">
+      <name>Assessing</name>
+      <label kind="invariant">xh&lt;=HUMAN_REVIEW_LIMIT</label>
+    </location>
+    <location id="hp" x="360" y="-80">
+      <name>Approved</name>
+    </location>
+    <location id="hr" x="360" y="80">
+      <name>Rejected</name>
+    </location>
+    <location id="ho" x="540" y="0">
+      <name>EmergencyOverride</name>
+    </location>
+    <init ref="hw" />
+    <transition>
+      <source ref="hw" />
+      <target ref="ha" />
+      <label kind="synchronisation">ai_to_human?</label>
+      <label kind="assignment">human_alert_received=ai_alert, human_acknowledged=false, human_approved=false, human_rejected=false, human_override=false, xh=0</label>
+    </transition>
+    <transition>
+      <source ref="ha" />
+      <target ref="hp" />
+      <label kind="guard">ai_alert &amp;&amp; xh&lt;=HUMAN_REVIEW_LIMIT</label>
+      <label kind="assignment">human_acknowledged=true, human_approved=true, human_rejected=false</label>
+    </transition>
+    <transition>
+      <source ref="ha" />
+      <target ref="hr" />
+      <label kind="guard">!ai_alert &amp;&amp; xh&lt;=HUMAN_REVIEW_LIMIT</label>
+      <label kind="assignment">human_acknowledged=true, human_approved=false, human_rejected=true</label>
+    </transition>
+    <transition>
+      <source ref="ha" />
+      <target ref="ho" />
+      <label kind="guard">xh&gt;=HUMAN_REVIEW_LIMIT</label>
+      <label kind="assignment">human_acknowledged=true, human_override=true, human_approved=false, human_rejected=false</label>
+    </transition>
+    <transition>
+      <source ref="hp" />
+      <target ref="hw" />
+      <label kind="synchronisation">human_to_response!</label>
+      <label kind="assignment">human_alert_received=false</label>
+    </transition>
+    <transition>
+      <source ref="hr" />
+      <target ref="hw" />
+      <label kind="synchronisation">human_to_response!</label>
+      <label kind="assignment">human_alert_received=false</label>
+    </transition>
+    <transition>
+      <source ref="ho" />
+      <target ref="hw" />
+      <label kind="synchronisation">human_to_response!</label>
+      <label kind="assignment">human_alert_received=false</label>
+    </transition>
+  </template>
+  <template>
+    <name>Response</name>
+    <parameter />
+    <declaration>clock xr;</declaration>
+    <location id="rs" x="0" y="0">
+      <name>Standby</name>
+    </location>
+    <location id="rz" x="180" y="0">
+      <name>SafeMode</name>
+    </location>
+    <location id="rn" x="360" y="0">
+      <name>NormalOperation</name>
+    </location>
+    <init ref="rs" />
+    <transition>
+      <source ref="rs" />
+      <target ref="rz" />
+      <label kind="guard">intrusion_detected</label>
+      <label kind="assignment">response_active=true, safe_mode=true, system_degraded=true, pump_cmd_on=false, pump_cmd_off=false, pump_state=false, xr=0</label>
+    </transition>
+    <transition>
+      <source ref="rs" />
+      <target ref="rz" />
+      <label kind="guard">human_acknowledged &amp;&amp; (human_approved || human_override)</label>
+      <label kind="synchronisation">human_to_response?</label>
+      <label kind="assignment">response_active=true, safe_mode=true, system_degraded=true, pump_cmd_on=false, pump_cmd_off=false, pump_state=false, xr=0</label>
+    </transition>
+    <transition>
+      <source ref="rs" />
+      <target ref="rs" />
+      <label kind="guard">human_rejected</label>
+      <label kind="synchronisation">human_to_response?</label>
+    </transition>
+    <transition>
+      <source ref="rz" />
+      <target ref="rn" />
+      <label kind="guard">!intrusion_detected &amp;&amp; recovery_complete</label>
+      <label kind="assignment">response_active=false, safe_mode=false</label>
+    </transition>
+    <transition>
+      <source ref="rn" />
+      <target ref="rs" />
+    </transition>
+  </template>
+  <template>
+    <name>PLC</name>
+    <parameter />
+    <declaration />
+    <location id="pc" x="0" y="0">
+      <name>Control</name>
+    </location>
+    <init ref="pc" />
+    <transition>
+      <source ref="pc" />
+      <target ref="pc" />
+      <label kind="guard">data_valid &amp;&amp; !safe_mode &amp;&amp; trusted_sensor_level&lt;=LOW &amp;&amp; !pump_cmd_off</label>
+      <label kind="assignment">pump_cmd_on=true, pump_cmd_off=false</label>
+    </transition>
+    <transition>
+      <source ref="pc" />
+      <target ref="pc" />
+      <label kind="guard">trusted_sensor_level&gt;=HIGH || safe_mode || pump_cmd_off</label>
+      <label kind="assignment">pump_cmd_on=false, pump_cmd_off=true</label>
+    </transition>
+  </template>
+  <template>
+    <name>Pump</name>
+    <parameter />
+    <declaration />
+    <location id="pu" x="0" y="0">
+      <name>Actuator</name>
+    </location>
+    <init ref="pu" />
+    <transition>
+      <source ref="pu" />
+      <target ref="pu" />
+      <label kind="guard">pump_cmd_on &amp;&amp; !safe_mode</label>
+      <label kind="assignment">pump_state=true, pump_cmd_on=false</label>
+    </transition>
+    <transition>
+      <source ref="pu" />
+      <target ref="pu" />
+      <label kind="guard">pump_cmd_off || safe_mode</label>
+      <label kind="assignment">pump_state=false, pump_cmd_off=false</label>
+    </transition>
+  </template>
+  <template>
+    <name>Recovery</name>
+    <parameter />
+    <declaration>clock xc;</declaration>
+    <location id="rw" x="0" y="0">
+      <name>Waiting</name>
+    </location>
+    <location id="rq" x="180" y="0">
+      <name>Qualifying</name>
+    </location>
+    <location id="rr" x="360" y="0">
+      <name>Recovered</name>
+    </location>
+    <init ref="rw" />
+    <transition>
+      <source ref="rw" />
+      <target ref="rq" />
+      <label kind="guard">!attack_active &amp;&amp; !intrusion_detected &amp;&amp; data_valid &amp;&amp; iot_connected</label>
+      <label kind="assignment">recovery_active=true, recovery_complete=false, clean_samples=0, xc=0</label>
+    </transition>
+    <transition>
+      <source ref="rq" />
+      <target ref="rq" />
+      <label kind="guard">!attack_active &amp;&amp; !intrusion_detected &amp;&amp; data_valid &amp;&amp; iot_connected &amp;&amp; clean_samples&lt;RECOVERY_CLEAN_REQUIRED</label>
+      <label kind="synchronisation">recovery_tick?</label>
+      <label kind="assignment">clean_samples=clean_samples+1, xc=0</label>
+    </transition>
+    <transition>
+      <source ref="rq" />
+      <target ref="rr" />
+      <label kind="guard">clean_samples&gt;=RECOVERY_CLEAN_REQUIRED &amp;&amp; !attack_active &amp;&amp; !intrusion_detected</label>
+      <label kind="assignment">recovery_complete=true, recovery_active=false, system_degraded=false</label>
+    </transition>
+    <transition>
+      <source ref="rq" />
+      <target ref="rw" />
+      <label kind="guard">attack_active || intrusion_detected || !iot_connected</label>
+      <label kind="assignment">clean_samples=0, recovery_active=false</label>
+    </transition>
+    <transition>
+      <source ref="rr" />
+      <target ref="rw" />
+      <label kind="guard">attack_active || intrusion_detected</label>
+      <label kind="assignment">recovery_complete=false, clean_samples=0</label>
+    </transition>
+  </template>
+  <template>
+    <name>Attacker</name>
+    <parameter />
+    <declaration>clock xatt;</declaration>
+    <location id="ad" x="0" y="0">
+      <name>Dormant</name>
+      <label kind="invariant">xatt&lt;=8</label>
+    </location>
+    <location id="ai" x="180" y="0">
+      <name>Injecting</name>
+    </location>
+    <init ref="ad" />
+    <transition>
+      <source ref="ad" />
+      <target ref="ai" />
+      <label kind="guard">xatt&gt;=3 &amp;&amp; !recovery_complete</label>
+      <label kind="assignment">attack_active=true, attack_success=true, sensor_level=(tank_level==HIGH ? LOW : HIGH), data_valid=true, iot_packet_valid=true, xatt=0</label>
+    </transition>
+    <transition>
+      <source ref="ai" />
+      <target ref="ad" />
+      <label kind="assignment">attack_active=false, xatt=0</label>
+    </transition>
+  </template>
+  <system>
+    tank=Tank(); 
+    iot_sensor=IoT_Sensor(); 
+    iot_network=IoT_Network(); 
+    iot_forwarder=IoT_Forwarder();
+    ai=AI_Analytics(); 
+    defence=Defence_IDS(); 
+    human=Human_Operator(); 
+    response=Response();
+    plc=PLC(); 
+    pump=Pump(); 
+    recovery=Recovery(); 
+    attacker=Attacker();
+    
+    system tank, iot_sensor, iot_network, iot_forwarder, ai, defence, human, response, plc, pump, recovery, attacker;
+  </system>
+</nta>

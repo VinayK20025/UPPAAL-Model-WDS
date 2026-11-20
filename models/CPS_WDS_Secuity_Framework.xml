@@ -1,232 +1,291 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.6//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_6.dtd'>
+<?xml version='1.0' encoding='utf-8'?>
 <nta>
-	<declaration>
+  <declaration>
+// ============================================================
+// CPS-WDS: Attack, Defence, Detection, Response and Recovery
+// Discrete abstraction: 0=DEPLETED ... 4=OVERFLOW
+// ============================================================
 const int DEPLETED = 0;
-const int LOW      = 1;
-const int NORMAL   = 2;
-const int HIGH     = 3;
+const int LOW = 1;
+const int NORMAL = 2;
+const int HIGH = 3;
 const int OVERFLOW = 4;
 
-/* Physical state */
-int tank_level   = NORMAL;
-int sensor_level = NORMAL;
-int secure_sensor_level = NORMAL;
-int plc_reading  = NORMAL;
+int tank_level = NORMAL;
+int sensor_level = NORMAL;          // untrusted/raw sensor value
+int trusted_sensor_level = NORMAL;  // independent reference channel
+int secure_sensor_level = NORMAL;   // value accepted by defence gateway
+int plc_reading = NORMAL;
 
-/* Actuation */
-bool pump_state   = false;
-bool pump_cmd_on  = false;
+bool pump_state = false;
+bool pump_cmd_on = false;
 bool pump_cmd_off = false;
 
-/* Security abstraction */
+bool attack_active = false;
+bool attack_success = false;
+bool defence_enabled = true;
+bool attack_blocked = false;
 bool intrusion_detected = false;
-bool data_valid         = true;
-
-/* Thresholds */
+bool data_valid = true;
+bool response_active = false;
+bool recovery_active = false;
+bool system_degraded = false;
+bool recovery_complete = false; // prevents a new attack while Recovered is occupied
+int clean_samples = 0;
+const int REQUIRED_CLEAN_SAMPLES = 3;
 const int LOWER_THRESHOLD = LOW;
 const int UPPER_THRESHOLD = HIGH;
 
-/* Channels */
-chan sensor_sample;
-chan net_deliver_sensor;
-chan plc_to_actuator;
-chan net_deliver_cmd;
+const int SAMPLE_MIN = 2;
+const int SAMPLE_MAX = 5;
+const int ATTACK_DELAY = 3;
 
-/* Timing */
-const int Ts_min = 1, Ts_max = 5;
-</declaration>
-	<template>
-		<name>Tank</name>
-		<location id="id0" x="40" y="80">
-			<name x="30" y="50">Normal</name>
-		</location>
-		<location id="id1" x="190" y="80">
-			<name x="180" y="50">Low</name>
-		</location>
-		<location id="id2" x="190" y="230">
-			<name x="180" y="200">High</name>
-		</location>
-		<location id="id3" x="40" y="230">
-			<name x="30" y="200">Overflow</name>
-		</location>
-		<location id="id4" x="340" y="80">
-			<name x="330" y="50">Depleted</name>
-		</location>
-		<init ref="id0"/>
-		<transition id="id5">
-			<source ref="id0"/>
-			<target ref="id1"/>
-			<label kind="guard" x="55" y="50">!pump_state</label>
-			<label kind="assignment" x="55" y="80">tank_level = LOW</label>
-		</transition>
-		<transition id="id6">
-			<source ref="id1"/>
-			<target ref="id0"/>
-			<label kind="guard" x="55" y="50">pump_state</label>
-			<label kind="assignment" x="55" y="80">tank_level = NORMAL</label>
-		</transition>
-		<transition id="id7">
-			<source ref="id0"/>
-			<target ref="id2"/>
-			<label kind="guard" x="55" y="125">pump_state</label>
-			<label kind="assignment" x="55" y="155">tank_level = HIGH</label>
-		</transition>
-		<transition id="id8">
-			<source ref="id2"/>
-			<target ref="id3"/>
-			<label kind="guard" x="55" y="200">pump_state</label>
-			<label kind="assignment" x="55" y="230">tank_level = OVERFLOW</label>
-		</transition>
-	</template>
-	<template>
-		<name>Sensor</name>
-		<declaration>clock x_s;</declaration>
-		<location id="id9" x="40" y="80">
-			<label kind="invariant" x="30" y="95">x_s &lt;= Ts_max</label>
-		</location>
-		<init ref="id9"/>
-		<transition id="id10">
-			<source ref="id9"/>
-			<target ref="id9"/>
-			<label kind="guard" x="-20" y="50">x_s &gt;= Ts_min</label>
-			<label kind="synchronisation" x="-20" y="65">sensor_sample!</label>
-			<label kind="assignment" x="-20" y="80">sensor_level = tank_level,
-      x_s = 0</label>
-			<nail x="10" y="50"/>
-			<nail x="70" y="50"/>
-		</transition>
-	</template>
-	<template>
-		<name>Network</name>
-		<location id="id11" x="40" y="80">
-		</location>
-		<init ref="id11"/>
-		<transition id="id12">
-			<source ref="id11"/>
-			<target ref="id11"/>
-			<label kind="select" x="-20" y="35">v : int[DEPLETED, OVERFLOW]</label>
-			<label kind="synchronisation" x="-20" y="65">net_deliver_sensor!</label>
-			<label kind="assignment" x="-20" y="80">secure_sensor_level = sensor_level</label>
-			<nail x="10" y="50"/>
-			<nail x="70" y="50"/>
-		</transition>
-	</template>
-	<template>
-		<name>IDS</name>
-		<location id="id13" x="40" y="80">
-		</location>
-		<init ref="id13"/>
-		<transition id="id14">
-			<source ref="id13"/>
-			<target ref="id13"/>
-			<label kind="synchronisation" x="-20" y="65">net_deliver_sensor?</label>
-			<label kind="assignment" x="-20" y="80">intrusion_detected = (secure_sensor_level != tank_level),
-      data_valid = (secure_sensor_level == tank_level)</label>
-			<nail x="10" y="50"/>
-			<nail x="70" y="50"/>
-		</transition>
-	</template>
-	<template>
-		<name>PLC</name>
-		<location id="id15" x="40" y="80">
-		</location>
-		<init ref="id15"/>
-		<transition id="id16">
-			<source ref="id15"/>
-			<target ref="id15"/>
-			<label kind="guard" x="-20" y="50">data_valid &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD</label>
-			<label kind="assignment" x="-20" y="80">pump_cmd_on = true,
-      pump_cmd_off = false</label>
-			<nail x="10" y="50"/>
-			<nail x="70" y="50"/>
-		</transition>
-		<transition id="id17">
-			<source ref="id15"/>
-			<target ref="id15"/>
-			<label kind="guard" x="-20" y="50">secure_sensor_level &gt;= UPPER_THRESHOLD</label>
-			<label kind="assignment" x="-20" y="80">pump_cmd_on = false,
-      pump_cmd_off = true</label>
-			<nail x="10" y="50"/>
-			<nail x="70" y="50"/>
-		</transition>
-	</template>
-	<template>
-		<name>Pump</name>
-		<location id="id18" x="40" y="80">
-		</location>
-		<init ref="id18"/>
-		<transition id="id19">
-			<source ref="id18"/>
-			<target ref="id18"/>
-			<label kind="guard" x="-20" y="50">pump_cmd_on</label>
-			<label kind="assignment" x="-20" y="80">pump_state = true,
-      pump_cmd_on = false</label>
-			<nail x="10" y="50"/>
-			<nail x="70" y="50"/>
-		</transition>
-		<transition id="id20">
-			<source ref="id18"/>
-			<target ref="id18"/>
-			<label kind="guard" x="-20" y="50">pump_cmd_off</label>
-			<label kind="assignment" x="-20" y="80">pump_state = false,
-      pump_cmd_off = false</label>
-			<nail x="10" y="50"/>
-			<nail x="70" y="50"/>
-		</transition>
-	</template>
-	<system>
+broadcast chan sample_tick;
+chan protected_delivery;
+  </declaration>
+  <template>
+    <name>Tank</name>
+    <declaration>clock x_t;</declaration>
+    <location id="t_normal" x="100" y="120">
+      <name x="70" y="90">Normal</name>
+      <label kind="invariant" x="80" y="145">x_t &lt;= SAMPLE_MAX</label>
+    </location>
+    <location id="t_low" x="300" y="120">
+      <name x="280" y="90">Low</name>
+      <label kind="invariant" x="280" y="145">x_t &lt;= SAMPLE_MAX</label>
+    </location>
+    <location id="t_high" x="100" y="300">
+      <name x="80" y="270">High</name>
+      <label kind="invariant" x="80" y="325">x_t &lt;= SAMPLE_MAX</label>
+    </location>
+    <location id="t_depleted" x="500" y="120">
+      <name x="470" y="90">Depleted</name>
+    </location>
+    <location id="t_overflow" x="300" y="300">
+      <name x="270" y="270">Overflow</name>
+    </location>
+    <init ref="t_normal" />
+    <transition id="tt1">
+      <source ref="t_normal" />
+      <target ref="t_low" />
+      <label kind="guard" x="160" y="90">x_t &gt;= SAMPLE_MIN &amp;&amp; !pump_state</label>
+      <label kind="assignment" x="160" y="115">tank_level = LOW, x_t = 0</label>
+    </transition>
+    <transition id="tt2">
+      <source ref="t_normal" />
+      <target ref="t_high" />
+      <label kind="guard" x="80" y="205">x_t &gt;= SAMPLE_MIN &amp;&amp; pump_state</label>
+      <label kind="assignment" x="80" y="230">tank_level = HIGH, x_t = 0</label>
+    </transition>
+    <transition id="tt3">
+      <source ref="t_low" />
+      <target ref="t_normal" />
+      <label kind="guard" x="180" y="60">x_t &gt;= SAMPLE_MIN &amp;&amp; pump_state</label>
+      <label kind="assignment" x="180" y="85">tank_level = NORMAL, x_t = 0</label>
+    </transition>
+    <transition id="tt4">
+      <source ref="t_high" />
+      <target ref="t_normal" />
+      <label kind="guard" x="80" y="205">x_t &gt;= SAMPLE_MIN &amp;&amp; !pump_state</label>
+      <label kind="assignment" x="80" y="230">tank_level = NORMAL, x_t = 0</label>
+    </transition>
+  </template>
+  <template>
+    <name>Sensor</name>
+    <declaration>clock x_s;</declaration>
+    <location id="s_sample" x="120" y="120">
+      <name x="90" y="90">Sampling</name>
+      <label kind="invariant" x="90" y="145">x_s &lt;= SAMPLE_MAX</label>
+    </location>
+    <init ref="s_sample" />
+    <transition id="st1">
+      <source ref="s_sample" />
+      <target ref="s_sample" />
+      <label kind="guard" x="120" y="55">x_s &gt;= SAMPLE_MIN</label>
+      <label kind="synchronisation" x="120" y="80">sample_tick!</label>
+      <label kind="assignment" x="120" y="105">sensor_level = (attack_active ? sensor_level : tank_level), trusted_sensor_level = tank_level, x_s = 0</label>
+    </transition>
+  </template>
+  <template>
+    <name>Attacker</name>
+    <declaration>clock x_a;</declaration>
+    <location id="a_idle" x="100" y="120">
+      <name x="75" y="90">Dormant</name>
+      <label kind="invariant" x="80" y="145">x_a &lt;= ATTACK_DELAY</label>
+    </location>
+    <location id="a_active" x="320" y="120">
+      <name x="295" y="90">Injecting</name>
+      <label kind="invariant" x="290" y="145">x_a &lt;= 2</label>
+    </location>
+    <init ref="a_idle" />
+    <transition id="at1">
+      <source ref="a_idle" />
+      <target ref="a_active" />
+      <label kind="guard" x="130" y="55">x_a &gt;= ATTACK_DELAY &amp;&amp; !recovery_complete</label>
+      <label kind="assignment" x="130" y="105">attack_active = true, attack_success = true, sensor_level = (tank_level == HIGH ? LOW : HIGH), clean_samples = 0, x_a = 0</label>
+    </transition>
+    <transition id="at2">
+      <source ref="a_active" />
+      <target ref="a_idle" />
+      <label kind="guard" x="170" y="180">x_a &gt;= 2</label>
+      <label kind="assignment" x="170" y="230">attack_active = false, x_a = 0</label>
+    </transition>
+  </template>
+  <template>
+    <name>DefenceGateway</name>
+    <location id="d_wait" x="100" y="120">
+      <name x="70" y="90">Filtering</name>
+    </location>
+    <init ref="d_wait" />
+    <transition id="dt1">
+      <source ref="d_wait" />
+      <target ref="d_wait" />
+      <label kind="synchronisation" x="100" y="55">sample_tick?</label>
+      <label kind="assignment" x="100" y="80">secure_sensor_level = (defence_enabled &amp;&amp; sensor_level != trusted_sensor_level ? trusted_sensor_level : sensor_level), attack_blocked = (defence_enabled &amp;&amp; sensor_level != trusted_sensor_level), data_valid = (defence_enabled ? true : sensor_level == trusted_sensor_level), plc_reading = (defence_enabled &amp;&amp; sensor_level != trusted_sensor_level ? trusted_sensor_level : sensor_level)</label>
+    </transition>
+    <transition id="dt2">
+      <source ref="d_wait" />
+      <target ref="d_wait" />
+      <label kind="guard" x="100" y="180">attack_blocked</label>
+      <label kind="synchronisation" x="100" y="205">protected_delivery!</label>
+      <label kind="assignment" x="100" y="230">intrusion_detected = true, data_valid = true, clean_samples = 0, system_degraded = true</label>
+    </transition>
+  </template>
+  <template>
+    <name>IDS</name>
+    <location id="i_monitor" x="100" y="120">
+      <name x="70" y="90">Monitoring</name>
+    </location>
+    <init ref="i_monitor" />
+    <transition id="it1">
+      <source ref="i_monitor" />
+      <target ref="i_monitor" />
+      <label kind="guard" x="100" y="55">attack_blocked</label>
+      <label kind="synchronisation" x="100" y="80">protected_delivery?</label>
+    </transition>
+  </template>
+  <template>
+    <name>PLC</name>
+    <location id="p_control" x="100" y="120">
+      <name x="70" y="90">Control</name>
+    </location>
+    <init ref="p_control" />
+    <transition id="pt1">
+      <source ref="p_control" />
+      <target ref="p_control" />
+      <label kind="guard" x="100" y="55">!response_active &amp;&amp; data_valid &amp;&amp; secure_sensor_level &lt;= LOWER_THRESHOLD</label>
+      <label kind="assignment" x="100" y="80">pump_cmd_on = true, pump_cmd_off = false</label>
+    </transition>
+    <transition id="pt2">
+      <source ref="p_control" />
+      <target ref="p_control" />
+      <label kind="guard" x="100" y="180">!response_active &amp;&amp; data_valid &amp;&amp; secure_sensor_level &gt;= UPPER_THRESHOLD</label>
+      <label kind="assignment" x="100" y="205">pump_cmd_on = false, pump_cmd_off = true</label>
+    </transition>
+    <transition id="pt3">
+      <source ref="p_control" />
+      <target ref="p_control" />
+      <label kind="guard" x="100" y="305">!response_active &amp;&amp; secure_sensor_level == NORMAL</label>
+      <label kind="assignment" x="100" y="330">pump_cmd_on = false, pump_cmd_off = false</label>
+    </transition>
+  </template>
+  <template>
+    <name>Response</name>
+    <location id="r_wait" x="100" y="120">
+      <name x="70" y="90">Standby</name>
+    </location>
+    <location id="r_safe" x="320" y="120">
+      <name x="290" y="90">SafeMode</name>
+    </location>
+    <init ref="r_wait" />
+    <transition id="rt1">
+      <source ref="r_wait" />
+      <target ref="r_safe" />
+      <label kind="guard" x="140" y="55">intrusion_detected</label>
+      <label kind="assignment" x="140" y="105">response_active = true, system_degraded = true, pump_cmd_on = false, pump_cmd_off = true</label>
+    </transition>
+    <transition id="rt2">
+      <source ref="r_safe" />
+      <target ref="r_safe" />
+      <label kind="guard" x="320" y="180">intrusion_detected</label>
+      <label kind="assignment" x="320" y="205">pump_cmd_on = false, pump_cmd_off = true</label>
+    </transition>
+  </template>
+  <template>
+    <name>Recovery</name>
+    <declaration>clock x_r;</declaration>
+    <location id="rc_wait" x="100" y="120">
+      <name x="70" y="90">Waiting</name>
+    </location>
+    <location id="rc_check" x="320" y="120">
+      <name x="290" y="90">Qualifying</name>
+      <label kind="invariant" x="290" y="145">x_r &lt;= SAMPLE_MAX</label>
+    </location>
+    <location id="rc_done" x="540" y="120">
+      <name x="510" y="90">Recovered</name>
+    </location>
+    <init ref="rc_wait" />
+    <transition id="rc1">
+      <source ref="rc_wait" />
+      <target ref="rc_check" />
+      <label kind="guard" x="140" y="55">intrusion_detected</label>
+      <label kind="assignment" x="140" y="80">recovery_active = true, x_r = 0, clean_samples = 0</label>
+    </transition>
+    <transition id="rc2">
+      <source ref="rc_check" />
+      <target ref="rc_check" />
+      <label kind="guard" x="320" y="55">recovery_active</label>
+      <label kind="assignment" x="320" y="80">clean_samples = (!attack_active ? (clean_samples &lt; REQUIRED_CLEAN_SAMPLES ? clean_samples + 1 : clean_samples) : 0), x_r = 0</label>
+      <label kind="synchronisation">sample_tick?</label>
+    </transition>
+    <transition id="rc3">
+      <source ref="rc_check" />
+      <target ref="rc_done" />
+      <label kind="guard" x="390" y="180">clean_samples &gt;= REQUIRED_CLEAN_SAMPLES &amp;&amp; !attack_active</label>
+      <label kind="assignment" x="390" y="230">intrusion_detected = false, attack_blocked = false, data_valid = true, response_active = false, recovery_active = false, system_degraded = false, pump_cmd_on = false, pump_cmd_off = false, recovery_complete = true</label>
+    </transition>
+    <transition id="rc4">
+      <source ref="rc_check" />
+      <target ref="rc_wait" />
+      <label kind="guard" x="170" y="260">attack_active</label>
+      <label kind="assignment" x="170" y="285">recovery_active = false</label>
+    </transition>
+    <transition id="rc5">
+      <source ref="rc_done" />
+      <target ref="rc_wait" />
+      <label kind="assignment" x="400" y="300">clean_samples = 0, recovery_complete = false</label>
+    </transition>
+  </template>
+  <template>
+    <name>Pump</name>
+    <location id="pu_idle" x="100" y="120">
+      <name x="70" y="90">Actuator</name>
+    </location>
+    <init ref="pu_idle" />
+    <transition id="put1">
+      <source ref="pu_idle" />
+      <target ref="pu_idle" />
+      <label kind="guard" x="100" y="55">pump_cmd_on &amp;&amp; !response_active</label>
+      <label kind="assignment" x="100" y="80">pump_state = true, pump_cmd_on = false, pump_cmd_off = false</label>
+    </transition>
+    <transition id="put2">
+      <source ref="pu_idle" />
+      <target ref="pu_idle" />
+      <label kind="guard" x="100" y="180">pump_cmd_off</label>
+      <label kind="assignment" x="100" y="205">pump_state = false, pump_cmd_on = false, pump_cmd_off = false</label>
+    </transition>
+  </template>
+  <system>
 tank = Tank();
 sensor = Sensor();
-network = Network();
+attacker = Attacker();
+defence = DefenceGateway();
 ids = IDS();
 plc = PLC();
+response = Response();
+recovery = Recovery();
 pump = Pump();
 
-system tank, sensor, network, ids, plc, pump;
-</system>
-	<queries>
-		<query>
-			<formula>A[] not tank.Overflow</formula>
-			<comment>Safety: Tank never overflows</comment>
-			<result outcome="failure" type="quality" timestamp="2026-03-31 23:54:52 +0530">
-			</result>
-		</query>
-		<query>
-			<formula>A[] not tank.Depleted</formula>
-			<comment>Safety: Tank never depletes</comment>
-			<result outcome="success" type="quality" timestamp="2026-03-31 23:54:54 +0530">
-			</result>
-		</query>
-		<query>
-			<formula>E&lt;&gt; tank.Normal</formula>
-			<comment>Liveness: System can reach Normal state</comment>
-			<result outcome="success" type="quality" timestamp="2026-03-31 23:54:55 +0530">
-			</result>
-		</query>
-		<query>
-			<formula>A[] sensor_level == tank_level</formula>
-			<comment>Raw sensor integrity</comment>
-			<result outcome="failure" type="quality" timestamp="2026-03-31 23:54:56 +0530">
-			</result>
-		</query>
-		<query>
-			<formula>A[] (not intrusion_detected imply secure_sensor_level == tank_level)</formula>
-			<comment>Secure data integrity under no alarm</comment>
-			<result outcome="failure" type="quality" timestamp="2026-03-31 23:54:58 +0530">
-			</result>
-		</query>
-		<query>
-			<formula>A[] !(pump_cmd_on &amp;&amp; pump_cmd_off)</formula>
-			<comment>No conflicting actuator commands</comment>
-			<result outcome="success" type="quality" timestamp="2026-03-31 23:54:59 +0530">
-			</result>
-		</query>
-		<query>
-			<formula>E&lt;&gt; intrusion_detected</formula>
-			<comment>Intrusion detection is reachable</comment>
-			<result outcome="success" type="quality" timestamp="2026-03-31 23:55:01 +0530">
-			</result>
-		</query>
-	</queries>
-</nta>
+system tank, sensor, attacker, defence, ids, plc, response, recovery, pump;
+  </system>
+ </nta>
