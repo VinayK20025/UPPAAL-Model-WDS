@@ -148,16 +148,18 @@ data_valid = false</label>
     </template>
     <template>
         <name>IDS</name>
-        <location id="id13" x="40" y="80">
-		</location>
-        <init ref="id13" />
+        <location id="id13" x="40" y="80"/>
+        <location id="recovery_notify_location" x="260" y="80"/>
+        <init ref="id13"/>
         <transition id="id14">
-            <source ref="id13" />
-            <target ref="id13" />
+            <source ref="id13"/>
+            <target ref="recovery_notify_location"/>
             <label kind="synchronisation" x="-20" y="65">net_deliver_sensor?</label>
             <label kind="assignment" x="-20" y="80">intrusion_detected =
     measurement_fresh &amp;&amp; (secure_sensor_level != tank_level),
 data_valid =
+    measurement_fresh &amp;&amp; (secure_sensor_level == tank_level) &amp;&amp; !fdi_active,
+recovery_sample_clean =
     measurement_fresh &amp;&amp; (secure_sensor_level == tank_level) &amp;&amp; !fdi_active,
 control_inhibit =
     (measurement_fresh &amp;&amp; (secure_sensor_level != tank_level)) ||
@@ -172,8 +174,11 @@ pump_cmd_on =
 pump_cmd_off =
     (measurement_fresh &amp;&amp; (secure_sensor_level != tank_level))
     ? false : pump_cmd_off</label>
-            <nail x="10" y="50" />
-            <nail x="70" y="50" />
+        </transition>
+        <transition id="ids_recovery_notify">
+            <source ref="recovery_notify_location"/>
+            <target ref="id13"/>
+            <label kind="synchronisation" x="170" y="120">ids_sample!</label>
         </transition>
     </template>
     <template>
